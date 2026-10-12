@@ -705,3 +705,39 @@ def check_invariants() -> list[str]:
         if reserved_allocs != level.reserved:
             problems.append(f"{label}: open allocations {reserved_allocs} != reserved {level.reserved}")
     return problems
+
+
+def return_committed_items(order, actor=None) -> int:
+    """Put picked stock back on the shelf when an order is cancelled after picking began (RETURN movements)."""
+    _require_transaction()
+    count = 0
+    for alloc in (
+        Allocation.objects.select_for_update()
+        .filter(order_item__order=order, state=AllocationState.COMMITTED)
+        .order_by("id")
+    ):
+        levels = lock_levels([alloc.product_id], alloc.branch_id)
+        level = levels[alloc.product_id]
+        batch = Batch.objects.select_for_update().filter(pk=alloc.batch_id).first() if alloc.batch_id else None
+        if batch is not None:
+            batch.qty_remaining += alloc.qty
+            if batch.status == BatchStatus.DEPLETED:
+                batch.status = BatchStatus.ACTIVE
+            batch.save(update_fields=["qty_remaining", "status", "updated_at"])
+        level.on_hand += alloc.qty
+        level.save(update_fields=["on_hand", "updated_at"])
+        _movement(
+            alloc.product_id,
+            alloc.branch_id,
+            MovementKind.RETURN,
+            alloc.qty,
+            level.on_hand,
+            batch=batch,
+            actor=actor,
+            ref_type="order",
+            ref_id=order.number,
+            note="Order cancelled after picking",
+        )
+        Allocation.objects.filter(pk=alloc.pk).update(state=AllocationState.RELEASED)
+        count += 1
+    return count

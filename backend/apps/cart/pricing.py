@@ -140,7 +140,8 @@ def compute_totals(
         or (free_delivery_threshold is not None and after_coupon >= free_delivery_threshold)
     ):
         fee, t.free_delivery = ZERO, True
-    t.delivery_fee = fee
+    t.delivery_fee = money(fee)
+    t.delivery_fee_before_free = money(t.delivery_fee_before_free)
 
     for ln in lines:
         rate = ln.product.tax_rate

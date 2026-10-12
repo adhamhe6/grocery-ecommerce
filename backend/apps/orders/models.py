@@ -234,7 +234,8 @@ class OrderStatusHistory(models.Model):
     to_status = models.CharField(max_length=20)
     actor = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     actor_label = models.CharField(max_length=254, blank=True)
-    note = models.CharField(max_length=400, blank=True)
+    note = models.CharField(max_length=400, blank=True, help_text="Internal note (staff only)")
+    public_note = models.CharField(max_length=300, blank=True, help_text="Shown to the customer in the order timeline")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

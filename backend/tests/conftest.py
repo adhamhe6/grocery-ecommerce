@@ -98,7 +98,7 @@ def zone(branch):
         areas=["old town"],
         delivery_fee=Decimal("4.00"),
         free_delivery_threshold=Decimal("60.00"),
-        min_order_value=Decimal("15.00"),
+        min_order_value=Decimal("5.00"),
     )
 
 
