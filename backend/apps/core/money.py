@@ -32,3 +32,13 @@ def is_multiple_of_step(value: Decimal, minimum: Decimal, step: Decimal) -> bool
         return False
     remainder = (value - minimum) % step
     return remainder == 0
+
+
+def qty_str(value) -> str | None:
+    """Canonical quantity text for API output: no trailing zeros ('3', '0.25', '1.5')."""
+    if value is None:
+        return None
+    text = f"{to_decimal(value):f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text

@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.core.money import money
+from apps.core.money import money, qty_str
 from apps.inventory.availability import compute_availability
 from apps.promotions.engine import PromotionIndex, display_promo
 
@@ -15,12 +15,7 @@ from .pricing_info import pack_label, unit_price_for
 
 
 def _q(value: Decimal | None) -> str | None:
-    if value is None:
-        return None
-    text = f"{value:f}"
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text
+    return qty_str(value)
 
 
 class ProductCardSerializer(serializers.Serializer):

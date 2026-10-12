@@ -167,7 +167,7 @@ CSRF_COOKIE_HTTPONLY = False  # the SPA reads it to send X-CSRFToken
 
 # ---------------------------------------------------------------- DRF
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.core.authentication.CSRFSessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
@@ -192,7 +192,6 @@ REST_FRAMEWORK = {
         "newsletter": env("THROTTLE_NEWSLETTER", "10/hour"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
-    "UNAUTHENTICATED_USER": None,
 }
 SPECTACULAR_SETTINGS = {
     "TITLE": "Orchard Row API",

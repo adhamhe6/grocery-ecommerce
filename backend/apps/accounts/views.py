@@ -14,7 +14,6 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.csrf import ensure_csrf_cookie
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
-from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -52,14 +51,6 @@ def _email_fingerprint(email: str) -> str:
     return hashlib.sha256(email.strip().lower().encode()).hexdigest()[:12]
 
 
-class CSRFEnforcedAnonymous(SessionAuthentication):
-    """Session auth that enforces CSRF even when no user is signed in yet (login-CSRF protection)."""
-
-    def authenticate(self, request):
-        self.enforce_csrf(request)
-        return None
-
-
 class CsrfView(APIView):
     """Sets the `csrftoken` cookie. The SPA echoes it back in `X-CSRFToken`."""
 
@@ -73,7 +64,6 @@ class CsrfView(APIView):
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
-    authentication_classes = [CSRFEnforcedAnonymous]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "register"
 
@@ -89,7 +79,6 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
-    authentication_classes = [CSRFEnforcedAnonymous]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
 
@@ -157,7 +146,6 @@ class PasswordChangeView(APIView):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
-    authentication_classes = [CSRFEnforcedAnonymous]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "password_reset"
 
@@ -178,7 +166,6 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
-    authentication_classes = [CSRFEnforcedAnonymous]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "password_reset"
 
