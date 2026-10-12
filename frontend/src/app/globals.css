@@ -1,0 +1,137 @@
+@import "tailwindcss";
+@import "@fontsource-variable/fraunces/wght.css";
+@import "@fontsource-variable/instrument-sans/wght.css";
+
+/*
+  Orchard Row design tokens.
+  The two brand colours are editable in the dashboard (Store settings) — the layout injects them as
+  --brand-primary / --brand-accent and everything below derives from them.
+*/
+:root {
+  --brand-primary: #1f3d2b;
+  --brand-accent: #b8532f;
+}
+
+@theme {
+  --font-display: "Fraunces Variable", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* surfaces */
+  --color-paper: #fbf7ef;
+  --color-paper-2: #f4eddf;
+  --color-sand: #ebe2d0;
+  --color-line: #e2d9c6;
+  --color-line-strong: #cdbf9f;
+  --color-white: #ffffff;
+
+  /* text */
+  --color-ink: #1b1f1c;
+  --color-ink-2: #4a524c;
+  --color-ink-3: #6a726c;
+
+  /* brand (editable) */
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: color-mix(in oklab, var(--brand-primary) 82%, black);
+  --color-primary-soft: color-mix(in oklab, var(--brand-primary) 10%, var(--color-paper));
+  --color-primary-fg: #ffffff;
+  --color-accent: var(--brand-accent);
+  --color-accent-hover: color-mix(in oklab, var(--brand-accent) 85%, black);
+  --color-accent-soft: color-mix(in oklab, var(--brand-accent) 12%, var(--color-paper));
+
+  --color-leaf: #3f7d4e;
+  --color-leaf-soft: #e4efe6;
+  --color-citrus: #e3a72f;
+  --color-citrus-soft: #fbf0d5;
+
+  /* feedback — always paired with an icon/label, never colour alone */
+  --color-ok: #25683a;
+  --color-ok-soft: #e1f0e5;
+  --color-warn: #8a4b00;
+  --color-warn-soft: #fcefd6;
+  --color-bad: #a8231b;
+  --color-bad-soft: #fbe4e1;
+  --color-info: #1d4f7a;
+  --color-info-soft: #e1edf7;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 0 rgb(27 31 28 / 0.04), 0 8px 24px -12px rgb(27 31 28 / 0.18);
+  --shadow-pop: 0 12px 40px -12px rgb(27 31 28 / 0.35);
+
+  --breakpoint-xs: 30rem;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 6rem;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-paper);
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+    color: var(--color-primary);
+  }
+  h1 { font-weight: 560; line-height: 1.08; }
+  h2 { font-weight: 560; line-height: 1.15; }
+  h3 { font-weight: 600; line-height: 1.25; }
+  a { color: inherit; text-underline-offset: 3px; }
+  button { cursor: pointer; }
+  img { max-width: 100%; height: auto; }
+  :focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--color-accent) 70%, white);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection { background: color-mix(in oklab, var(--color-citrus) 55%, white); color: var(--color-ink); }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  table { border-collapse: collapse; }
+}
+
+@layer components {
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 650;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+  .container-x { width: 100%; max-width: 80rem; margin-inline: auto; padding-inline: 1rem; }
+  @media (min-width: 40rem) { .container-x { padding-inline: 1.5rem; } }
+  @media (min-width: 64rem) { .container-x { padding-inline: 2rem; } }
+  .row-rule { border-top: 1px solid var(--color-line); }
+  .scroll-snap-x { display: flex; gap: 1rem; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: thin; padding-bottom: 0.5rem; }
+  .scroll-snap-x > * { scroll-snap-align: start; flex: 0 0 auto; }
+  .tile-bg { background: radial-gradient(120% 90% at 50% 30%, #fffdf8 0%, var(--color-paper-2) 100%); }
+  .skeleton { background: linear-gradient(90deg, var(--color-paper-2) 25%, var(--color-sand) 37%, var(--color-paper-2) 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: var(--radius-sm); }
+}
+
+@keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes slide-in-left { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
+
+@media print {
+  header, footer, nav, .no-print { display: none !important; }
+  body { background: white; }
+}
