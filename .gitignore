@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.sqlite3
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Runtime data
+backend/media/
+backend/staticfiles/
+*.log
+.DS_Store
+.idea/
+.vscode/
