@@ -52,7 +52,7 @@ export function ProductCard({ p, priority }: { p: ProductCardData; priority?: bo
         </button>
       </div>
       <div className="flex flex-1 flex-col pt-3">
-        {p.brand && <p className="text-xs font-medium uppercase tracking-wide text-ink-3">{p.brand.name}</p>}
+        <p className="min-h-4 text-xs font-medium uppercase tracking-wide text-ink-3">{p.brand?.name}</p>
         <h3 id={`p-${p.id}`} className="font-sans text-[0.97rem] font-semibold leading-snug text-ink">
           <Link href={`/product/${p.slug}`} className="line-clamp-2 hover:underline after:absolute after:inset-x-0 after:top-0 after:h-[calc(100%-4.5rem)] after:content-['']">{p.name}</Link>
         </h3>

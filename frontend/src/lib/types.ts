@@ -330,3 +330,66 @@ export interface HomeData {
   new_arrivals: ProductCardData[];
   guides: Article[];
 }
+
+// ---------------------------------------------------------------- content (pages, articles, FAQs), stores, SEO
+/** Row of `GET /articles/` and the head of `GET /articles/<slug>/`. `image` is a variant map here (the home payload's guides use a plain URL, see `Article`). */
+export interface ArticleListItem {
+  slug: string;
+  kind: "RECIPE" | "GUIDE";
+  title: string;
+  summary: string;
+  image: Record<string, string> | null;
+  servings: number | null;
+  total_minutes: number | null;
+  published_at: string;
+}
+
+/** `GET /articles/<slug>/` — `body` is Markdown; `products` are the catalogue's own cards (default branch availability). */
+export interface ArticleDetail extends ArticleListItem {
+  body: string;
+  products: ProductCardData[];
+}
+
+export interface CmsPageSummary {
+  slug: string;
+  title: string;
+  summary: string;
+  is_template: boolean;
+  updated_at: string;
+}
+
+/** `GET /pages/<slug>/` — `body` is Markdown. `is_template` marks placeholder wording that the business has not reviewed. */
+export interface CmsPage extends CmsPageSummary {
+  body: string;
+}
+
+export interface FaqRow {
+  id: number;
+  topic: string;
+  question: string;
+  answer: string;
+}
+
+export interface CollectionLink {
+  slug: string;
+  name: string;
+  description: string;
+}
+
+/** `GET /delivery/check/` */
+export type DeliveryCheckResult =
+  | { serviceable: false; message: string }
+  | {
+      serviceable: true;
+      branch: { id: number; name: string };
+      zone: { id: number; name: string; delivery_fee: Money; free_delivery_threshold: Money | null; min_order_value: Money };
+    };
+
+/** `GET /seo/sitemap/` — slugs + last-modified of everything a visitor can open. */
+export interface SitemapData {
+  products: { slug: string; updated_at: string }[];
+  categories: { slug: string; updated_at: string }[];
+  collections: { slug: string; updated_at: string }[];
+  pages: { slug: string; updated_at: string }[];
+  articles: { slug: string; updated_at: string }[];
+}

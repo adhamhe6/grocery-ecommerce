@@ -22,11 +22,17 @@ const config: NextConfig = {
   output: "standalone",
   distDir: process.env.NEXT_DIST_DIR || ".next", // lets parallel builds/dev servers use separate output directories
   reactStrictMode: true,
+  // Django's API routes end in a slash. Without this, Next 308-redirects /api/v1/cart/ to /api/v1/cart and Django redirects
+  // it back: an endless loop.
+  skipTrailingSlashRedirect: true,
   poweredByHeader: false,
   async rewrites() {
     return [
+      // Trailing-slash variants first: `:path*` alone would drop the slash and Django would redirect back to it.
+      { source: "/api/:path*/", destination: `${BACKEND}/api/:path*/` },
       { source: "/api/:path*", destination: `${BACKEND}/api/:path*` },
       { source: "/media/:path*", destination: `${BACKEND}/media/:path*` },
+
     ];
   },
   async headers() {

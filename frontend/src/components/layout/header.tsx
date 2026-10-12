@@ -14,10 +14,10 @@ import { SearchBox } from "./search-box";
 function DepartmentNav({ departments }: { departments: CategoryNode[] }) {
   return (
     <nav aria-label="Departments" className="hidden border-t border-line lg:block">
-      <ul className="container-x flex items-center gap-1">
+      <ul className="container-x flex items-center gap-0.5">
         {departments.map((d) => (
           <li key={d.id} className="group relative">
-            <Link href={`/shop?category=${d.slug}`} className="flex items-center gap-1 px-3 py-3 text-[0.93rem] font-semibold text-ink hover:text-primary" aria-haspopup={d.children?.length ? "true" : undefined}>
+            <Link href={`/shop?category=${d.slug}`} className="flex items-center gap-1 whitespace-nowrap px-2.5 py-3 text-[0.9rem] font-semibold text-ink hover:text-primary" aria-haspopup={d.children?.length ? "true" : undefined}>
               {d.name}{!!d.children?.length && <ChevronDown className="size-3.5 text-ink-3 transition-transform group-hover:rotate-180 group-focus-within:rotate-180" aria-hidden />}
             </Link>
             {!!d.children?.length && (
@@ -33,9 +33,9 @@ function DepartmentNav({ departments }: { departments: CategoryNode[] }) {
           </li>
         ))}
         <li className="ml-auto flex items-center gap-1">
-          <Link href="/offers" className="px-3 py-3 text-[0.93rem] font-semibold text-accent hover:underline">Offers</Link>
-          <Link href="/new" className="px-3 py-3 text-[0.93rem] font-semibold text-ink hover:text-primary">New in</Link>
-          <Link href="/guides" className="px-3 py-3 text-[0.93rem] font-semibold text-ink hover:text-primary">Recipes &amp; guides</Link>
+          <Link href="/offers" className="whitespace-nowrap px-2.5 py-3 text-[0.9rem] font-semibold text-accent hover:underline">Offers</Link>
+          <Link href="/new" className="hidden whitespace-nowrap px-2.5 py-3 text-[0.9rem] font-semibold text-ink hover:text-primary xl:block">New in</Link>
+          <Link href="/guides" className="hidden whitespace-nowrap px-2.5 py-3 text-[0.9rem] font-semibold text-ink hover:text-primary xl:block">Recipes &amp; guides</Link>
         </li>
       </ul>
     </nav>

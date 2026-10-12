@@ -40,14 +40,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 export function useMe() {
   return useQuery<User | null>({
     queryKey: ["me"],
-    queryFn: async () => {
-      try {
-        return await apiGet<User>("/account/me/");
-      } catch (e) {
-        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
-        throw e;
-      }
-    },
+    // /auth/session/ answers 200 with {user: null} for visitors, so anonymous page loads produce no failing requests.
+    queryFn: async () => (await apiGet<{ user: User | null }>("/auth/session/")).user,
     staleTime: 60_000,
   });
 }
@@ -155,7 +149,8 @@ const readIds = (): number[] => {
     return [];
   }
 };
-let snapshot: number[] = [];
+const EMPTY: number[] = [];
+let snapshot: number[] = EMPTY;
 let hydrated = false;
 function emit(next: number[]) {
   snapshot = next;
@@ -177,7 +172,7 @@ export function useCompare() {
       return () => listeners.delete(cb);
     },
     () => snapshot,
-    () => [] as number[],
+    () => EMPTY,
   );
   // Mirror to the account (best effort) so the list follows the customer across devices.
   const synced = React.useRef<string>("");

@@ -5,8 +5,8 @@ import type { StoreConfig } from "@/lib/types";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
   { title: "Shop", links: [["All products", "/shop"], ["Offers", "/offers"], ["New in", "/new"], ["Recipes & guides", "/guides"]] },
-  { title: "Help", links: [["Delivery & collection", "/p/delivery"], ["Substitutions & weights", "/p/substitutions"], ["Returns & refunds", "/p/returns"], ["FAQs", "/faq"], ["Track an order", "/track"], ["Contact us", "/contact"]] },
-  { title: "Company", links: [["Our stores", "/stores"], ["About Orchard Row", "/p/about"], ["Privacy", "/p/privacy"], ["Terms", "/p/terms"], ["Accessibility", "/p/accessibility"]] },
+  { title: "Help", links: [["Delivery & collection", "/p/delivery-policy"], ["Substitutions & weights", "/p/substitutions"], ["Returns & refunds", "/p/refund-and-cancellation"], ["FAQs", "/faq"], ["Track an order", "/track"], ["Contact us", "/contact"]] },
+  { title: "Company", links: [["Our stores", "/stores"], ["About Orchard Row", "/p/about"], ["Privacy", "/p/privacy"], ["Terms", "/p/terms"], ["Sourcing & freshness", "/p/sourcing-and-freshness"]] },
 ];
 
 const SOCIAL_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", x: "X", youtube: "YouTube", tiktok: "TikTok" };

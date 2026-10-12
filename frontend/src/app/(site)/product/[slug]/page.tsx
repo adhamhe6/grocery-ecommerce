@@ -135,7 +135,7 @@ export default async function ProductPage({ params }: { params: Promise<Params> 
           <h2 className="font-sans text-base font-bold text-ink">Freshness &amp; delivery</h2>
           <p>{p.is_perishable ? "Perishable: we only sell stock with enough shelf life left to be enjoyed after delivery." : "Shelf-stable: stored ambient."}</p>
           <p>Prices and availability are confirmed again when you check out. Delivery slots are held while you pay.</p>
-          <Link href="/p/delivery" className="font-semibold text-primary underline-offset-4 hover:underline">Delivery &amp; substitution policy</Link>
+          <Link href="/p/delivery-policy" className="font-semibold text-primary underline-offset-4 hover:underline">Delivery &amp; substitution policy</Link>
         </aside>
       </div>
 
