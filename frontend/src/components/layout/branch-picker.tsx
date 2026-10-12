@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPatch } from "@/lib/api";
 import type { Branch } from "@/lib/types";
 
 /** Stock and slots are per store, so the chosen store is kept in a cookie the server components can read. */
@@ -33,8 +33,10 @@ export function BranchPicker({ current }: { current?: number }) {
             <li key={b.id}>
               <Button
                 variant={b.id === active?.id ? "primary" : "secondary"} className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-3 text-left"
-                onClick={() => {
+                onClick={async () => {
                   setBranchCookie(b.id);
+                  // The basket is priced and checked against one store's stock, so it follows the choice.
+                  await apiPatch("/cart/", { branch_id: b.id }).catch(() => undefined);
                   qc.invalidateQueries();
                   setOpen(false);
                   router.refresh();

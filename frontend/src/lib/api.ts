@@ -13,13 +13,21 @@ export class ApiError extends Error {
     this.details = details;
     this.requestId = requestId;
   }
-  /** Field-level messages for form libraries: { "email": "Already exists", "contact.phone": "Required" } */
+  /** Field-level messages for forms, nested serializer errors flattened to dotted keys: { "contact.email": "Required" } */
   get fieldErrors(): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(this.details ?? {})) {
-      if (Array.isArray(v) && typeof v[0] === "string") out[k] = v[0];
-      else if (typeof v === "string") out[k] = v;
-    }
+    const walk = (value: unknown, path: string) => {
+      if (Array.isArray(value)) {
+        const first = value.find((v) => typeof v === "string");
+        if (typeof first === "string" && path) out[path] = first;
+        else value.forEach((v, i) => walk(v, path ? `${path}.${i}` : String(i)));
+      } else if (typeof value === "string") {
+        if (path) out[path] = value;
+      } else if (value && typeof value === "object") {
+        for (const [k, v] of Object.entries(value)) walk(v, path ? `${path}.${k}` : k);
+      }
+    };
+    walk(this.details ?? {}, "");
     return out;
   }
 }

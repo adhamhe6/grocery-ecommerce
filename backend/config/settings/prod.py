@@ -10,9 +10,12 @@ if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:  # noqa: F405
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must list explicit hosts in production")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = env_bool("USE_X_FORWARDED_HOST", True)  # the storefront proxies /api, so the public host arrives forwarded
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# Secure by default. Only a local, plain-HTTP trial of the production stack (docker compose on localhost) turns these off.
+SECURE_COOKIES = env_bool("SECURE_COOKIES", True)
+SESSION_COOKIE_SECURE = SECURE_COOKIES
+CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 31536000)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_CONTENT_TYPE_NOSNIFF = True

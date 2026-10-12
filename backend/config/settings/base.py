@@ -133,6 +133,7 @@ STORAGES = {
 }
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(env("MEDIA_ROOT", str(BASE_DIR / "media")))
+SERVE_MEDIA = env_bool("SERVE_MEDIA", False)  # see config/urls.py: demo/single-host only
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 6 * 1024 * 1024
 IMAGE_UPLOAD_MAX_BYTES = env_int("IMAGE_UPLOAD_MAX_BYTES", 5 * 1024 * 1024)

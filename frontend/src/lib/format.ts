@@ -51,3 +51,13 @@ export function imgSrcSet(urls: Record<string, string> | undefined): string | un
   const keys = Object.keys(urls).filter((k) => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b);
   return keys.length > 1 ? keys.map((k) => `${urls[String(k)]} ${k}w`).join(", ") : undefined;
 }
+
+/** "Tue, 14 Oct" / "9–11 AM" for an ISO instant, rendered in the *store's* timezone (not the browser's). */
+export function formatSlotDay(iso: string, timeZone: string, locale = "en-US"): string {
+  return new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone }).format(new Date(iso));
+}
+
+export function formatSlotWindow(startIso: string, endIso: string, timeZone: string, locale = "en-US"): string {
+  const f = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone });
+  return `${f.format(new Date(startIso))} – ${f.format(new Date(endIso))}`;
+}

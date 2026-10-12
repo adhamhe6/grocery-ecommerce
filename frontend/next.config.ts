@@ -20,6 +20,7 @@ const csp = [
 
 const config: NextConfig = {
   output: "standalone",
+  distDir: process.env.NEXT_DIST_DIR || ".next", // lets parallel builds/dev servers use separate output directories
   reactStrictMode: true,
   poweredByHeader: false,
   async rewrites() {

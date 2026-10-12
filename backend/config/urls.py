@@ -1,7 +1,8 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from apps.core import views as core_views
@@ -16,3 +17,7 @@ urlpatterns = [
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+elif settings.SERVE_MEDIA:
+    # Convenience for single-host/demo deployments only (Django's static server is not built for heavy traffic).
+    # Production should serve MEDIA_ROOT from object storage or a CDN/reverse proxy and leave SERVE_MEDIA off.
+    urlpatterns += [re_path(r"^media/(?P<path>.*)$", serve_static, {"document_root": settings.MEDIA_ROOT})]
