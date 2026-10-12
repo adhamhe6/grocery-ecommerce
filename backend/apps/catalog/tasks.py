@@ -23,9 +23,7 @@ def refresh_popularity() -> int:
     counted = OrderItem.objects.filter(
         product=OuterRef("pk"), order__placed_at__gte=since, substitute_for__isnull=True
     ).exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED, OrderStatus.PENDING_PAYMENT])
-    sold = (
-        counted.order_by().values("product").annotate(total=Sum("ordered_qty")).values("total")
-    )
+    sold = counted.order_by().values("product").annotate(total=Sum("ordered_qty")).values("total")
     updated = Product.objects.update(
         popularity=Coalesce(Subquery(sold, output_field=DecimalField()), Value(0), output_field=DecimalField())
     )

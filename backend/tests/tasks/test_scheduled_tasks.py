@@ -9,7 +9,7 @@ from apps.catalog.tasks import refresh_popularity
 from apps.inventory import services as inv
 from apps.inventory.models import BatchStatus, StockLevel
 from apps.inventory.tasks import expiry_and_low_stock_scan
-from tests.shop import payload, pay, place
+from tests.shop import pay, payload, place
 
 pytestmark = pytest.mark.django_db
 D = Decimal

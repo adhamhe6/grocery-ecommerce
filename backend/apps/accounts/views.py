@@ -20,6 +20,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.core.async_utils import safe_delay
 from apps.core.exceptions import DomainError
 
 from .models import Address, User
@@ -156,7 +157,8 @@ class PasswordResetRequestView(APIView):
         user = User.objects.filter(email__iexact=ser.validated_data["email"], is_active=True).first()
         if user:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
-            send_password_reset_email.delay(user.email, uid, default_token_generator.make_token(user))
+            # A queue outage must not change the response: a 500 only for real accounts would reveal which exist.
+            safe_delay(send_password_reset_email, user.email, uid, default_token_generator.make_token(user))
         # Same response whether or not the account exists: no account enumeration through this endpoint.
         return Response(
             {"detail": "If an account exists for that email, a reset link is on its way."},

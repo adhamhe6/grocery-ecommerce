@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from django.db import transaction
-
+from apps.core.async_utils import enqueue_after_commit
 from apps.core.money import money
 
-from .models import Notification
+from .models import DeliveryChannel, Notification
 from .tasks import send_notification_email
 
 logger = logging.getLogger(__name__)
@@ -75,6 +74,7 @@ def _context(order, extra: dict) -> dict:
 def notify_order(order, kind: str, **extra) -> Notification | None:
     title, body = TEMPLATES[kind]
     ctx = _context(order, extra)
+    wants_email = order.customer.notify_order_emails if order.customer_id else True
     note = Notification.objects.create(
         user=order.customer,
         email="" if order.customer_id else order.contact_email,
@@ -82,8 +82,9 @@ def notify_order(order, kind: str, **extra) -> Notification | None:
         order=order,
         title=title.format(**ctx),
         body=body.format(**ctx).strip(),
+        # Recorded as queued *before* the broker is touched: if the enqueue is lost, `requeue_stalled_emails` finds it.
+        channel=DeliveryChannel.EMAIL_QUEUED if wants_email else DeliveryChannel.IN_APP,
     )
-    wants_email = order.customer.notify_order_emails if order.customer_id else True
     if wants_email:
-        transaction.on_commit(lambda: send_notification_email.delay(note.pk, order.contact_email))
+        enqueue_after_commit(send_notification_email, note.pk, order.contact_email)
     return note

@@ -228,6 +228,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.catalog.tasks.refresh_popularity",
         "schedule": 60.0 * 60 * 3,
     },
+    "requeue-stalled-emails": {
+        "task": "apps.notifications.tasks.requeue_stalled_emails",
+        "schedule": 60.0 * 10,
+    },
     "cleanup-idempotency-keys": {
         "task": "apps.core.tasks.cleanup_idempotency_keys",
         "schedule": 60.0 * 60 * 24,
