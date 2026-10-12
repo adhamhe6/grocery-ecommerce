@@ -401,12 +401,13 @@ def scene(art: str, *, bg: str | None = None, shadow: bool = True, w: int = 900,
     The art sits inside `<g id="art">`; render.py measures its bounding box in Chromium and scales/centres it onto
     the ground line, so archetypes never need to hand-tune their own framing.
     """
+    paper_rect = f'<rect width="{w}" height="{h}" fill="url(#paper)"/>'
     ground = (
         '<ellipse id="gshadow" cx="450" cy="700" rx="200" ry="26" fill="#4A3622" opacity=".20" filter="url(#blur)"/>'
     )
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">{DEFS}'
-        f"{bg if bg is not None else f'''<rect width="{w}" height="{h}" fill="url(#paper)"/>'''}"
+        f'<g id="bg">{bg if bg is not None else paper_rect}</g>'
         f"{ground if shadow else ''}"
         f'<g id="art">{art}</g></svg>'
     )

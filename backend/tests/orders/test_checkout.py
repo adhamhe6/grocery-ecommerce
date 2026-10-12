@@ -15,7 +15,7 @@ from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.payments.models import Payment, PaymentEvent
 from apps.promotions.models import Coupon, CouponRedemption
 from apps.stores.models import DeliverySlot
-from tests.orders.conftest import ADDRESS, PASSWORD, deliver, event_for, pay, payload, place
+from tests.shop import ADDRESS, PASSWORD, deliver, event_for, pay, payload, place
 
 pytestmark = pytest.mark.django_db
 D = Decimal

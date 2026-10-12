@@ -33,7 +33,14 @@ def supplier():
 
 @pytest.fixture
 def yoghurt(product_factory):
-    return product_factory(sku="YOG", name="Natural yoghurt 500g", price="2.20", tracks_batches=True, is_perishable=True, sell_buffer_days=1)
+    return product_factory(
+        sku="YOG",
+        name="Natural yoghurt 500g",
+        price="2.20",
+        tracks_batches=True,
+        is_perishable=True,
+        sell_buffer_days=1,
+    )
 
 
 @pytest.fixture
@@ -55,27 +62,56 @@ def line_row(po, product, accepted, **kw):
 
 class TestPurchaseOrderLifecycle:
     def test_create_edit_submit_confirm(self, supplier, branch, buyer, yoghurt, rice):
-        po = make_po(supplier, branch, buyer, [{"product_id": yoghurt.id, "qty_ordered": 40, "unit_cost": "1.10"}, {"product_id": rice.id, "qty_ordered": 20, "unit_cost": "1.90"}], submit=False)
-        assert po.status == POStatus.DRAFT and po.number.startswith("PO-") and po.expected_date == TODAY + dt.timedelta(days=2) and po.total_cost == D("82.00")
+        po = make_po(
+            supplier,
+            branch,
+            buyer,
+            [
+                {"product_id": yoghurt.id, "qty_ordered": 40, "unit_cost": "1.10"},
+                {"product_id": rice.id, "qty_ordered": 20, "unit_cost": "1.90"},
+            ],
+            submit=False,
+        )
+        assert (
+            po.status == POStatus.DRAFT
+            and po.number.startswith("PO-")
+            and po.expected_date == TODAY + dt.timedelta(days=2)
+            and po.total_cost == D("82.00")
+        )
         po_svc.set_lines(po, [{"product_id": rice.id, "qty_ordered": 10, "unit_cost": "2.00"}])
         assert po.lines.count() == 1
         po = po_svc.submit_po(po, buyer)
         assert po.status == POStatus.SUBMITTED and po.submitted_at
         with pytest.raises(DomainError):
-            po_svc.set_lines(po, [{"product_id": rice.id, "qty_ordered": 1, "unit_cost": "1"}])  # no edits after submission
+            po_svc.set_lines(
+                po, [{"product_id": rice.id, "qty_ordered": 1, "unit_cost": "1"}]
+            )  # no edits after submission
         assert po_svc.confirm_po(po, buyer).status == POStatus.CONFIRMED
 
     def test_invalid_lines_and_inactive_supplier(self, supplier, branch, buyer, rice):
         with pytest.raises(DomainError):
-            make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 0, "unit_cost": "1"}], submit=False)
+            make_po(
+                supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 0, "unit_cost": "1"}], submit=False
+            )
         with pytest.raises(DomainError):
-            make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 1, "unit_cost": "1"}, {"product_id": rice.id, "qty_ordered": 2, "unit_cost": "1"}], submit=False)
+            make_po(
+                supplier,
+                branch,
+                buyer,
+                [
+                    {"product_id": rice.id, "qty_ordered": 1, "unit_cost": "1"},
+                    {"product_id": rice.id, "qty_ordered": 2, "unit_cost": "1"},
+                ],
+                submit=False,
+            )
         with pytest.raises(DomainError):
             po_svc.submit_po(po_svc.create_po(supplier=supplier, branch_id=branch.id, lines=[], actor=buyer), buyer)
         supplier.status = "ON_HOLD"
         supplier.save()
         with pytest.raises(DomainError):
-            make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 1, "unit_cost": "1"}], submit=False)
+            make_po(
+                supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 1, "unit_cost": "1"}], submit=False
+            )
 
     def test_cancel_only_before_goods_arrive(self, supplier, branch, buyer, rice):
         po = make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 10, "unit_cost": "1.9"}])
@@ -92,20 +128,58 @@ class TestPurchaseOrderLifecycle:
 
 class TestReceiving:
     def test_receiving_creates_batches_stock_and_ledger_with_expiry(self, supplier, branch, buyer, yoghurt, rice):
-        po = make_po(supplier, branch, buyer, [{"product_id": yoghurt.id, "qty_ordered": 40, "unit_cost": "1.10"}, {"product_id": rice.id, "qty_ordered": 20, "unit_cost": "1.90"}])
+        po = make_po(
+            supplier,
+            branch,
+            buyer,
+            [
+                {"product_id": yoghurt.id, "qty_ordered": 40, "unit_cost": "1.10"},
+                {"product_id": rice.id, "qty_ordered": 20, "unit_cost": "1.90"},
+            ],
+        )
         exp = TODAY + dt.timedelta(days=12)
         receipt, replayed = po_svc.receive_goods(
-            po, [line_row(po, yoghurt, 38, qty_rejected=2, reject_reason="crushed cartons", lot_code="Y-1012", expiry_date=exp, expiry_kind="USE_BY"), line_row(po, rice, 20)],
-            idempotency_key="rcpt-delivery1", actor=buyer, delivery_note="DN-8841",
+            po,
+            [
+                line_row(
+                    po,
+                    yoghurt,
+                    38,
+                    qty_rejected=2,
+                    reject_reason="crushed cartons",
+                    lot_code="Y-1012",
+                    expiry_date=exp,
+                    expiry_kind="USE_BY",
+                ),
+                line_row(po, rice, 20),
+            ],
+            idempotency_key="rcpt-delivery1",
+            actor=buyer,
+            delivery_note="DN-8841",
         )
         assert not replayed and receipt.number.startswith("GR-") and receipt.lines.count() == 2
         batch = Batch.objects.get(product=yoghurt)
-        assert (batch.lot_code, batch.qty_remaining, batch.expiry_date, batch.expiry_kind, batch.supplier, batch.unit_cost) == ("Y-1012", 38, exp, "USE_BY", supplier, D("1.10"))
+        assert (
+            batch.lot_code,
+            batch.qty_remaining,
+            batch.expiry_date,
+            batch.expiry_kind,
+            batch.supplier,
+            batch.unit_cost,
+        ) == ("Y-1012", 38, exp, "USE_BY", supplier, D("1.10"))
         assert batch.sellable_until == exp - dt.timedelta(days=1)
-        assert StockLevel.objects.get(product=yoghurt).on_hand == 38 and StockLevel.objects.get(product=rice).on_hand == 20
+        assert (
+            StockLevel.objects.get(product=yoghurt).on_hand == 38 and StockLevel.objects.get(product=rice).on_hand == 20
+        )
         assert not Batch.objects.filter(product=rice).exists()  # rice isn't batch-tracked
         mv = StockMovement.objects.get(product=yoghurt)
-        assert (mv.kind, mv.qty_delta, mv.batch, mv.ref_id, mv.unit_cost) == (MovementKind.RECEIPT, 38, batch, receipt.number, D("1.10"))
+        assert (mv.kind, mv.qty_delta, mv.batch, mv.ref_id, mv.unit_cost) == (
+            MovementKind.RECEIPT,
+            38,
+            batch,
+            receipt.number,
+            D("1.10"),
+        )
         po.refresh_from_db()
         pl = po.lines.get(product=yoghurt)
         assert po.status == POStatus.PARTIALLY_RECEIVED and (pl.qty_received, pl.qty_rejected) == (38, 2)
@@ -114,12 +188,21 @@ class TestReceiving:
     def test_second_delivery_completes_the_order_and_merges_the_same_lot(self, supplier, branch, buyer, yoghurt):
         po = make_po(supplier, branch, buyer, [{"product_id": yoghurt.id, "qty_ordered": 40, "unit_cost": "1.10"}])
         exp = TODAY + dt.timedelta(days=10)
-        po_svc.receive_goods(po, [line_row(po, yoghurt, 25, lot_code="L7", expiry_date=exp)], idempotency_key="rcpt-part-1", actor=buyer)
-        po_svc.receive_goods(po, [line_row(po, yoghurt, 15, lot_code="L7", expiry_date=exp)], idempotency_key="rcpt-part-2", actor=buyer)
+        po_svc.receive_goods(
+            po, [line_row(po, yoghurt, 25, lot_code="L7", expiry_date=exp)], idempotency_key="rcpt-part-1", actor=buyer
+        )
+        po_svc.receive_goods(
+            po, [line_row(po, yoghurt, 15, lot_code="L7", expiry_date=exp)], idempotency_key="rcpt-part-2", actor=buyer
+        )
         po.refresh_from_db()
         assert po.status == POStatus.RECEIVED and Batch.objects.get().qty_remaining == 40 and po.receipts.count() == 2
         with pytest.raises(DomainError) as exc:
-            po_svc.receive_goods(po, [line_row(po, yoghurt, 1, lot_code="L7", expiry_date=exp)], idempotency_key="rcpt-part-3", actor=buyer)
+            po_svc.receive_goods(
+                po,
+                [line_row(po, yoghurt, 1, lot_code="L7", expiry_date=exp)],
+                idempotency_key="rcpt-part-3",
+                actor=buyer,
+            )
         assert exc.value.code == "DUPLICATE_RECEIPT"
 
     def test_same_key_twice_is_a_noop(self, supplier, branch, buyer, rice):
@@ -127,9 +210,15 @@ class TestReceiving:
         first, r1 = po_svc.receive_goods(po, [line_row(po, rice, 20)], idempotency_key="rcpt-dbl-click", actor=buyer)
         second, r2 = po_svc.receive_goods(po, [line_row(po, rice, 20)], idempotency_key="rcpt-dbl-click", actor=buyer)
         assert (r1, r2) == (False, True) and first.pk == second.pk
-        assert StockLevel.objects.get(product=rice).on_hand == 20 and GoodsReceipt.objects.count() == 1 and StockMovement.objects.count() == 1
+        assert (
+            StockLevel.objects.get(product=rice).on_hand == 20
+            and GoodsReceipt.objects.count() == 1
+            and StockMovement.objects.count() == 1
+        )
 
-    def test_a_different_key_for_the_same_delivery_is_caught_by_the_outstanding_quantity(self, supplier, branch, buyer, rice):
+    def test_a_different_key_for_the_same_delivery_is_caught_by_the_outstanding_quantity(
+        self, supplier, branch, buyer, rice
+    ):
         po = make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 20, "unit_cost": "1.9"}])
         po_svc.receive_goods(po, [line_row(po, rice, 20)], idempotency_key="rcpt-first-one", actor=buyer)
         with pytest.raises(DomainError) as exc:
@@ -142,24 +231,47 @@ class TestReceiving:
         with pytest.raises(DomainError) as exc:
             po_svc.receive_goods(po, [line_row(po, rice, 23)], idempotency_key="rcpt-over-001", actor=buyer)
         assert "already entered" in exc.value.message and StockLevel.objects.filter(product=rice).count() == 0
-        po_svc.receive_goods(po, [line_row(po, rice, 22)], idempotency_key="rcpt-over-002", actor=buyer)  # +10% is tolerated
+        po_svc.receive_goods(
+            po, [line_row(po, rice, 22)], idempotency_key="rcpt-over-002", actor=buyer
+        )  # +10% is tolerated
 
-    def test_batch_products_need_lot_and_expiry_and_rejections_need_a_reason(self, supplier, branch, buyer, yoghurt, rice):
-        po = make_po(supplier, branch, buyer, [{"product_id": yoghurt.id, "qty_ordered": 10, "unit_cost": "1.1"}, {"product_id": rice.id, "qty_ordered": 10, "unit_cost": "1.9"}])
+    def test_batch_products_need_lot_and_expiry_and_rejections_need_a_reason(
+        self, supplier, branch, buyer, yoghurt, rice
+    ):
+        po = make_po(
+            supplier,
+            branch,
+            buyer,
+            [
+                {"product_id": yoghurt.id, "qty_ordered": 10, "unit_cost": "1.1"},
+                {"product_id": rice.id, "qty_ordered": 10, "unit_cost": "1.9"},
+            ],
+        )
         with pytest.raises(DomainError):
             po_svc.receive_goods(po, [line_row(po, yoghurt, 10)], idempotency_key="rcpt-nolot-01", actor=buyer)
         with pytest.raises(DomainError):
-            po_svc.receive_goods(po, [line_row(po, rice, 8, qty_rejected=2)], idempotency_key="rcpt-noreason", actor=buyer)
+            po_svc.receive_goods(
+                po, [line_row(po, rice, 8, qty_rejected=2)], idempotency_key="rcpt-noreason", actor=buyer
+            )
         with pytest.raises(DomainError):
             po_svc.receive_goods(po, [], idempotency_key="rcpt-empty-01", actor=buyer)
         # a failed receipt leaves absolutely nothing behind (all-or-nothing)
-        assert GoodsReceipt.objects.count() == 0 and StockMovement.objects.count() == 0 and po.lines.filter(qty_received__gt=0).count() == 0
+        assert (
+            GoodsReceipt.objects.count() == 0
+            and StockMovement.objects.count() == 0
+            and po.lines.filter(qty_received__gt=0).count() == 0
+        )
 
     def test_a_line_from_another_po_is_rejected(self, supplier, branch, buyer, rice, yoghurt):
         a = make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 10, "unit_cost": "1.9"}])
         b = make_po(supplier, branch, buyer, [{"product_id": yoghurt.id, "qty_ordered": 10, "unit_cost": "1.9"}])
         with pytest.raises(DomainError):
-            po_svc.receive_goods(a, [{"po_line_id": b.lines.get().id, "qty_accepted": D("5")}], idempotency_key="rcpt-cross-01", actor=buyer)
+            po_svc.receive_goods(
+                a,
+                [{"po_line_id": b.lines.get().id, "qty_accepted": D("5")}],
+                idempotency_key="rcpt-cross-01",
+                actor=buyer,
+            )
 
     @pytest.mark.django_db(transaction=True, serialized_rollback=True)
     @pytest.mark.concurrency
@@ -186,11 +298,28 @@ class TestReceiving:
 
 
 class TestWorkflow4BatchExpiryEndToEnd:
-    def test_received_batches_drive_fefo_allocation_and_blocked_stock_is_never_sold(self, supplier, branch, buyer, yoghurt, order_factory):
+    def test_received_batches_drive_fefo_allocation_and_blocked_stock_is_never_sold(
+        self, supplier, branch, buyer, yoghurt, order_factory
+    ):
         po = make_po(supplier, branch, buyer, [{"product_id": yoghurt.id, "qty_ordered": 60, "unit_cost": "1.10"}])
-        po_svc.receive_goods(po, [line_row(po, yoghurt, 20, lot_code="LATE", expiry_date=TODAY + dt.timedelta(days=15))], idempotency_key="rcpt-wf4-late1", actor=buyer)
-        po_svc.receive_goods(po, [line_row(po, yoghurt, 10, lot_code="SOON", expiry_date=TODAY + dt.timedelta(days=4))], idempotency_key="rcpt-wf4-soon1", actor=buyer)
-        po_svc.receive_goods(po, [line_row(po, yoghurt, 10, lot_code="OLD", expiry_date=TODAY - dt.timedelta(days=1))], idempotency_key="rcpt-wf4-old11", actor=buyer)
+        po_svc.receive_goods(
+            po,
+            [line_row(po, yoghurt, 20, lot_code="LATE", expiry_date=TODAY + dt.timedelta(days=15))],
+            idempotency_key="rcpt-wf4-late1",
+            actor=buyer,
+        )
+        po_svc.receive_goods(
+            po,
+            [line_row(po, yoghurt, 10, lot_code="SOON", expiry_date=TODAY + dt.timedelta(days=4))],
+            idempotency_key="rcpt-wf4-soon1",
+            actor=buyer,
+        )
+        po_svc.receive_goods(
+            po,
+            [line_row(po, yoghurt, 10, lot_code="OLD", expiry_date=TODAY - dt.timedelta(days=1))],
+            idempotency_key="rcpt-wf4-old11",
+            actor=buyer,
+        )
         assert inv.expire_batches(TODAY) == 1  # OLD flips to EXPIRED
         # public availability excludes the expired batch: 30 sellable of 40 on hand
         from rest_framework.test import APIClient
@@ -233,7 +362,11 @@ class TestReplenishmentAndSupplierStats:
         assert len(sug) == 1
         s = sug[0]
         assert s["sku"] == "RICE" and s["available"] == "6.000" and s["suggested_qty"] == "40.000"
-        assert s["avg_daily_sales"] == "0.800" and s["days_of_cover"] == "7.5" and s["suppliers"][0]["name"] == "Millbrook Dairy"
+        assert (
+            s["avg_daily_sales"] == "0.800"
+            and s["days_of_cover"] == "7.5"
+            and s["suppliers"][0]["name"] == "Millbrook Dairy"
+        )
         po = make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 40, "unit_cost": "1.9"}])
         assert po_svc.replenishment_suggestions(branch.id)[0]["on_order"] == "40.000" and po
 
@@ -247,6 +380,16 @@ class TestReplenishmentAndSupplierStats:
     def test_supplier_performance_is_computed_from_receipts_only(self, supplier, branch, buyer, rice):
         assert po_svc.supplier_performance(supplier)["fill_rate"] is None  # no data → no number
         po = make_po(supplier, branch, buyer, [{"product_id": rice.id, "qty_ordered": 100, "unit_cost": "1.9"}])
-        po_svc.receive_goods(po, [line_row(po, rice, 90, qty_rejected=10, reject_reason="torn bags")], idempotency_key="rcpt-perf-001", actor=buyer)
+        po_svc.receive_goods(
+            po,
+            [line_row(po, rice, 90, qty_rejected=10, reject_reason="torn bags")],
+            idempotency_key="rcpt-perf-001",
+            actor=buyer,
+        )
         perf = po_svc.supplier_performance(supplier)
-        assert perf["fill_rate"] == "90.0" and perf["rejection_rate"] == "10.0" and perf["on_time_rate"] == "100.0" and perf["receipts"] == 1
+        assert (
+            perf["fill_rate"] == "90.0"
+            and perf["rejection_rate"] == "10.0"
+            and perf["on_time_rate"] == "100.0"
+            and perf["receipts"] == 1
+        )

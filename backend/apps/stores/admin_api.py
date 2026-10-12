@@ -28,7 +28,9 @@ class HoursSerializer(serializers.ModelSerializer):
         fields = ["weekday", "opens", "closes", "is_closed"]
 
     def validate(self, attrs):
-        if not attrs.get("is_closed") and not (attrs.get("opens") and attrs.get("closes") and attrs["opens"] < attrs["closes"]):
+        if not attrs.get("is_closed") and not (
+            attrs.get("opens") and attrs.get("closes") and attrs["opens"] < attrs["closes"]
+        ):
             raise serializers.ValidationError("Opening time must be before closing time (or mark the day closed).")
         return attrs
 
@@ -39,8 +41,26 @@ class BranchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
         fields = [
-            "id", "code", "name", "slug", "address_line1", "address_line2", "city", "area", "postal_code", "phone", "email", "timezone",
-            "is_active", "is_default", "offers_delivery", "offers_pickup", "prep_minutes", "pickup_instructions", "hours", "is_demo",
+            "id",
+            "code",
+            "name",
+            "slug",
+            "address_line1",
+            "address_line2",
+            "city",
+            "area",
+            "postal_code",
+            "phone",
+            "email",
+            "timezone",
+            "is_active",
+            "is_default",
+            "offers_delivery",
+            "offers_pickup",
+            "prep_minutes",
+            "pickup_instructions",
+            "hours",
+            "is_demo",
         ]
         read_only_fields = ["id", "is_demo"]
         # The partial-unique index guarantees one default; flipping it is handled in create()/update(), not rejected.
@@ -89,7 +109,11 @@ class BranchViewSet(AdminViewSet):
 
     def perform_destroy(self, instance):
         if instance.orders.exists() or instance.stock_levels.exists():
-            raise DomainError(ErrorCode.INVALID_STATE, "This branch has orders or stock, so it can't be deleted. Deactivate it instead.", status_code=409)
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "This branch has orders or stock, so it can't be deleted. Deactivate it instead.",
+                status_code=409,
+            )
         super().perform_destroy(instance)
 
 
@@ -113,7 +137,11 @@ class ClosureViewSet(AdminViewSet):
         branch, day = serializer.validated_data["branch"], serializer.validated_data["date"]
         slots = DeliverySlot.objects.filter(branch=branch, date=day)
         if slots.filter(booked__gt=0).exists():
-            raise DomainError(ErrorCode.INVALID_STATE, "Customers have already booked slots that day. Move or cancel those orders before closing the branch.", status_code=409)
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "Customers have already booked slots that day. Move or cancel those orders before closing the branch.",
+                status_code=409,
+            )
         super().perform_create(serializer)
         slots.update(is_open=False)
 
@@ -121,7 +149,18 @@ class ClosureViewSet(AdminViewSet):
 class ZoneSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeliveryZone
-        fields = ["id", "branch", "name", "postcode_prefixes", "areas", "delivery_fee", "free_delivery_threshold", "min_order_value", "priority", "is_active"]
+        fields = [
+            "id",
+            "branch",
+            "name",
+            "postcode_prefixes",
+            "areas",
+            "delivery_fee",
+            "free_delivery_threshold",
+            "min_order_value",
+            "priority",
+            "is_active",
+        ]
         read_only_fields = ["id"]
 
     def validate_postcode_prefixes(self, value):
@@ -139,8 +178,12 @@ class ZoneSerializer(serializers.ModelSerializer):
         old_fee = instance.delivery_fee
         zone = super().update(instance, validated)
         if zone.delivery_fee != old_fee:  # future slots without their own override follow the zone fee
-            DeliverySlot.objects.filter(zone=zone, date__gte=timezone.localdate()).filter(template__isnull=True).update(fee=zone.delivery_fee)
-            DeliverySlot.objects.filter(zone=zone, date__gte=timezone.localdate(), template__fee__isnull=True).update(fee=zone.delivery_fee)
+            DeliverySlot.objects.filter(zone=zone, date__gte=timezone.localdate()).filter(template__isnull=True).update(
+                fee=zone.delivery_fee
+            )
+            DeliverySlot.objects.filter(zone=zone, date__gte=timezone.localdate(), template__fee__isnull=True).update(
+                fee=zone.delivery_fee
+            )
         return zone
 
 
@@ -176,7 +219,9 @@ class TemplateSerializer(serializers.ModelSerializer):
 
 
 class TemplateViewSet(AdminViewSet):
-    queryset = SlotTemplate.objects.select_related("branch", "zone").order_by("branch__name", "kind", "weekday", "start_time")
+    queryset = SlotTemplate.objects.select_related("branch", "zone").order_by(
+        "branch__name", "kind", "weekday", "start_time"
+    )
     serializer_class = TemplateSerializer
     read_capability = "catalog.read"
     capability = "slots.manage"
@@ -189,12 +234,27 @@ class SlotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DeliverySlot
-        fields = ["id", "branch", "zone", "kind", "date", "start_time", "end_time", "capacity", "booked", "remaining", "fee", "is_open"]
+        fields = [
+            "id",
+            "branch",
+            "zone",
+            "kind",
+            "date",
+            "start_time",
+            "end_time",
+            "capacity",
+            "booked",
+            "remaining",
+            "fee",
+            "is_open",
+        ]
         read_only_fields = ["id", "booked", "remaining", "branch", "zone", "kind", "date", "start_time", "end_time"]
 
     def validate_capacity(self, value):
         if self.instance is not None and value < self.instance.booked:
-            raise serializers.ValidationError(f"{self.instance.booked} customers have already booked this slot, so capacity can't go below that.")
+            raise serializers.ValidationError(
+                f"{self.instance.booked} customers have already booked this slot, so capacity can't go below that."
+            )
         if value < 1:
             raise serializers.ValidationError("Capacity must be at least 1.")
         return value
@@ -229,7 +289,11 @@ class SlotViewSet(AdminViewSet):
 
     def perform_destroy(self, instance):
         if instance.booked:
-            raise DomainError(ErrorCode.INVALID_STATE, "Customers have booked this slot. Close it instead and move their orders.", status_code=409)
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "Customers have booked this slot. Close it instead and move their orders.",
+                status_code=409,
+            )
         super().perform_destroy(instance)
 
     @extend_schema(request=None, responses={200: dict})
@@ -241,7 +305,9 @@ class SlotViewSet(AdminViewSet):
         ensure_branch_access(request.user, branch.id)
         days = min(max(int(request.data.get("days_ahead", 7)), 1), 28)
         created = generate_slots(branch, days_ahead=days)
-        audit.record(request.user, "slot.generated", branch, summary=f"{created} slots for {days} days", request=request)
+        audit.record(
+            request.user, "slot.generated", branch, summary=f"{created} slots for {days} days", request=request
+        )
         return Response({"created": created}, status=status.HTTP_200_OK)
 
 
@@ -254,6 +320,9 @@ class MyBranchesView(APIView):
     def get(self, request):
         ids = branch_ids_for(request.user)
         qs = Branch.objects.filter(is_active=True) if ids is None else Branch.objects.filter(pk__in=ids, is_active=True)
-        return Response({"global": ids is None, "branches": [{"id": b.id, "code": b.code, "name": b.name} for b in qs.order_by("name")]})
-
-
+        return Response(
+            {
+                "global": ids is None,
+                "branches": [{"id": b.id, "code": b.code, "name": b.name} for b in qs.order_by("name")],
+            }
+        )

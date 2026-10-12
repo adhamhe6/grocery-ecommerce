@@ -4,6 +4,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from tests.conftest import make_user
+from tests.shop import cheese, make_slot, milk, pickup_slot, shop_client, slot  # noqa: F401  (shared fixtures)
 
 _counter = itertools.count(1)
 

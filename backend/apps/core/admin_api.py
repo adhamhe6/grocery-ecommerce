@@ -80,21 +80,39 @@ class AdminViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         self.check_write_scope(serializer.validated_data)
         instance = serializer.save()
-        audit.record(self.request.user, f"{self.label}.created", instance, after=snapshot(instance, self.audit_exclude), request=self.request)
+        audit.record(
+            self.request.user,
+            f"{self.label}.created",
+            instance,
+            after=snapshot(instance, self.audit_exclude),
+            request=self.request,
+        )
 
     def perform_update(self, serializer):
         self.check_write_scope(serializer.validated_data)
         before = snapshot(serializer.instance, self.audit_exclude)
         instance = serializer.save()
-        audit.record(self.request.user, f"{self.label}.updated", instance, before=before, after=snapshot(instance, self.audit_exclude), request=self.request)
+        audit.record(
+            self.request.user,
+            f"{self.label}.updated",
+            instance,
+            before=before,
+            after=snapshot(instance, self.audit_exclude),
+            request=self.request,
+        )
 
     def perform_destroy(self, instance):
         before = snapshot(instance, self.audit_exclude)
         target_id = str(instance.pk)
         instance.delete()
         audit.record(
-            self.request.user, f"{self.label}.deleted", None, before=before, request=self.request,
-            target_type=self.queryset.model.__name__, target_id=target_id,
+            self.request.user,
+            f"{self.label}.deleted",
+            None,
+            before=before,
+            request=self.request,
+            target_type=self.queryset.model.__name__,
+            target_id=target_id,
         )
 
 

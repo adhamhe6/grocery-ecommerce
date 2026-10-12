@@ -324,8 +324,15 @@ def commit_pick(order_item, picked_qty: Decimal, actor=None, on_date: dt.date | 
     for batch_id, used in consumed.items():  # one ledger row per batch per pick
         level.on_hand -= used
         _movement(
-            product.id, branch_id, MovementKind.SALE, -used, level.on_hand,
-            batch=batches.get(batch_id) if batch_id else None, actor=actor, ref_type="order", ref_id=order.number,
+            product.id,
+            branch_id,
+            MovementKind.SALE,
+            -used,
+            level.on_hand,
+            batch=batches.get(batch_id) if batch_id else None,
+            actor=actor,
+            ref_type="order",
+            ref_id=order.number,
         )
     level.reserved -= total_reserved
     level.save(update_fields=["on_hand", "reserved", "updated_at"])

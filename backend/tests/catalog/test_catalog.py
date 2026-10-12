@@ -441,3 +441,24 @@ class TestCategoriesAndCaching:
     def test_store_settings_endpoint_is_public_and_labels_payment_mode(self, api, settings_obj):
         data = api.get("/api/v1/store/").json()
         assert data["name"] == "Orchard Row" and data["payment"]["mode"] == "demo"
+
+
+def test_decimals_are_never_serialised_as_floats():
+    """Regression: DRF's stock encoder renders a raw Decimal as a float; ours renders the exact string."""
+    import json
+    from decimal import Decimal
+
+    from rest_framework.response import Response
+    from rest_framework.test import APIRequestFactory
+    from rest_framework.views import APIView
+
+    class V(APIView):
+        authentication_classes: list = []
+        permission_classes: list = []
+
+        def get(self, request):
+            return Response({"price": Decimal("51.94"), "tiny": Decimal("0.10")})
+
+    res = V.as_view()(APIRequestFactory().get("/"))
+    res.render()
+    assert json.loads(res.content) == {"price": "51.94", "tiny": "0.10"}

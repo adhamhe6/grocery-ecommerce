@@ -15,7 +15,7 @@ from apps.orders.models import Order, Substitution
 from apps.payments import services as pay_services
 from apps.payments.models import Payment, Refund
 from tests.conftest import make_user
-from tests.orders.conftest import pay, payload, place
+from tests.shop import pay, payload, place
 
 pytestmark = pytest.mark.django_db
 D = Decimal
@@ -74,11 +74,18 @@ class TestVariableWeightProduce:
         ful.finish_picking(order, picker)
         order.refresh_from_db()
         ci.refresh_from_db()
-        assert (ci.ordered_qty, ci.picked_qty, ci.line_total_estimated, ci.line_total_final) == (D("1.5"), D("1.62"), D("18.00"), D("19.44"))
+        assert (ci.ordered_qty, ci.picked_qty, ci.line_total_estimated, ci.line_total_final) == (
+            D("1.5"),
+            D("1.62"),
+            D("18.00"),
+            D("19.44"),
+        )
         assert order.final_total == D("28.44")  # 19.44 + 5.00 + 4.00
         assert order.final_total <= order.authorized_amount  # the guarantee: never above what the customer authorised
 
-    def test_capture_is_the_final_amount_and_never_exceeds_authorisation(self, order, cheese, milk, picker, monkeypatch):
+    def test_capture_is_the_final_amount_and_never_exceeds_authorisation(
+        self, order, cheese, milk, picker, monkeypatch
+    ):
         calls = []
         from apps.payments.providers.demo import DemoProvider
 
@@ -88,7 +95,11 @@ class TestVariableWeightProduce:
         ful.finish_picking(order, picker)
         ful.finish_packing(order, picker)
         payment = Payment.objects.get()
-        assert calls == [D("28.80")] and payment.state == "CAPTURED" and payment.captured_amount == D("28.80") <= payment.amount
+        assert (
+            calls == [D("28.80")]
+            and payment.state == "CAPTURED"
+            and payment.captured_amount == D("28.80") <= payment.amount
+        )
         order.refresh_from_db()
         assert (order.status, order.payment_status, order.final_total) == ("READY_FOR_DISPATCH", "PAID", D("28.80"))
 
@@ -97,7 +108,10 @@ class TestVariableWeightProduce:
             ful.pick_item(item_of(order, cheese).id, "1.9", picker)
         assert err_code(exc) == "WEIGHT_OUT_OF_TOLERANCE"
         assert "max 1.65" in exc.value.message and exc.value.details["max_allowed"] == "1.65"
-        assert item_of(order, cheese).picked_qty is None and StockMovement.objects.filter(kind=MovementKind.SALE).count() == 0
+        assert (
+            item_of(order, cheese).picked_qty is None
+            and StockMovement.objects.filter(kind=MovementKind.SALE).count() == 0
+        )
 
     def test_manager_override_is_capped_at_tolerance_and_audited(self, order, cheese, manager):
         from apps.core.models import AuditLog
@@ -135,9 +149,18 @@ class TestVariableWeightProduce:
         ful.finish_picking(order, picker)
         data = APIClient().get(f"/api/v1/orders/{order.number}/?token={order.tracking_token}").json()
         line = next(i for i in data["items"] if i["name"] == "Mature cheddar")
-        assert (line["ordered_qty"], line["picked_qty"], line["line_total_estimated"], line["line_total_final"]) == ("1.5", "1.62", "18.00", "19.44")
+        assert (line["ordered_qty"], line["picked_qty"], line["line_total_estimated"], line["line_total_final"]) == (
+            "1.5",
+            "1.62",
+            "18.00",
+            "19.44",
+        )
         assert "weight we actually pick" in line["price_note"]
-        assert (data["totals"]["total"], data["totals"]["final_total"], data["totals"]["difference"]) == ("27.00", "28.44", "1.44")
+        assert (data["totals"]["total"], data["totals"]["final_total"], data["totals"]["difference"]) == (
+            "27.00",
+            "28.44",
+            "1.44",
+        )
 
     def test_count_items_cannot_be_over_picked_and_short_picks_are_cheaper(self, order, milk, cheese, picker):
         mi = item_of(order, milk)
@@ -178,16 +201,41 @@ class TestFullFulfilment:
         assert order.final_total == D("12.60") + D("7.50") + D("4.00")
         assert Payment.objects.get().captured_amount == order.final_total
         status_changes = [h.to_status for h in order.history.all() if h.from_status != h.to_status]
-        assert status_changes == ["PENDING_PAYMENT", "CONFIRMED", "PICKING", "PACKING", "READY_FOR_DISPATCH", "OUT_FOR_DELIVERY", "COMPLETED"]
-        assert StockLevel.objects.get(product=milk).on_hand == 27 and StockLevel.objects.get(product=cheese).on_hand == D("8.95")
+        assert status_changes == [
+            "PENDING_PAYMENT",
+            "CONFIRMED",
+            "PICKING",
+            "PACKING",
+            "READY_FOR_DISPATCH",
+            "OUT_FOR_DELIVERY",
+            "COMPLETED",
+        ]
+        assert StockLevel.objects.get(product=milk).on_hand == 27 and StockLevel.objects.get(
+            product=cheese
+        ).on_hand == D("8.95")
         assert inv.check_invariants() == []
         kinds = set(Notification.objects.filter(order=order).values_list("kind", flat=True))
-        assert {"ORDER_PLACED", "PAYMENT_CONFIRMED", "PICKING_STARTED", "ORDER_READY_DISPATCH", "OUT_FOR_DELIVERY", "ORDER_COMPLETED"} <= kinds
+        assert {
+            "ORDER_PLACED",
+            "PAYMENT_CONFIRMED",
+            "PICKING_STARTED",
+            "ORDER_READY_DISPATCH",
+            "OUT_FOR_DELIVERY",
+            "ORDER_COMPLETED",
+        } <= kinds
 
     def test_pickup_order_goes_ready_for_pickup_then_completed(self, milk, pickup_slot, branch, picker):
         c = basket([(milk, 4)])
-        number = place(c, {"fulfilment_type": "PICKUP", "branch_id": branch.id, "slot_id": pickup_slot.id, "payment_method": "COD",
-                           "contact": {"name": "Pat", "email": "pat@example.com", "phone": "555-0100"}}).json()["number"]
+        number = place(
+            c,
+            {
+                "fulfilment_type": "PICKUP",
+                "branch_id": branch.id,
+                "slot_id": pickup_slot.id,
+                "payment_method": "COD",
+                "contact": {"name": "Pat", "email": "pat@example.com", "phone": "555-0100"},
+            },
+        ).json()["number"]
         order = Order.objects.get(number=number)
         ful.start_picking(order, picker)
         ful.pick_item(item_of(order, milk).id, 4, picker)
@@ -212,19 +260,27 @@ class TestFullFulfilment:
             ful.finish_packing(order, picker)
         assert err_code(exc) == "INVALID_ORDER_TRANSITION"
 
-    def test_staff_cancel_after_picking_returns_stock_and_refunds_captured_money(self, milk, cheese, slot, picker, manager):
+    def test_staff_cancel_after_picking_returns_stock_and_refunds_captured_money(
+        self, milk, cheese, slot, picker, manager
+    ):
         order = checkout(basket([(milk, 3)]), slot)
         ful.start_picking(order, picker)
         ful.pick_item(item_of(order, milk).id, 3, picker)
         ful.finish_picking(order, picker)
         ful.finish_packing(order, picker)  # card captured
-        cancelled = workflow.cancel_order(order, actor=manager, reason="Customer unreachable at door", by_customer=False)
+        cancelled = workflow.cancel_order(
+            order, actor=manager, reason="Customer unreachable at door", by_customer=False
+        )
         assert cancelled.status == "CANCELLED"
         assert StockLevel.objects.get(product=milk).on_hand == 30  # picked stock went back on the shelf
         assert StockMovement.objects.filter(kind=MovementKind.RETURN).count() == 1
         payment = Payment.objects.get()
         refund = Refund.objects.get()
-        assert refund.status == "SUCCEEDED" and payment.refunded_amount == payment.captured_amount and payment.state == "REFUNDED"
+        assert (
+            refund.status == "SUCCEEDED"
+            and payment.refunded_amount == payment.captured_amount
+            and payment.state == "REFUNDED"
+        )
         assert inv.check_invariants() == []
 
 
@@ -280,7 +336,12 @@ class TestSubstitutionPolicies:
         it = item_of(order, original)
         ful.mark_unavailable(it.id, picker, "dropped & damaged")
         sub = ful.propose_substitution(it.id, pricey.id, picker, reason="same size, same style")
-        assert sub.status == "AUTO_APPROVED" and sub.list_unit_price == D("4.20") and sub.charged_unit_price == D("3.00") and sub.price_difference == D("3.60")
+        assert (
+            sub.status == "AUTO_APPROVED"
+            and sub.list_unit_price == D("4.20")
+            and sub.charged_unit_price == D("3.00")
+            and sub.price_difference == D("3.60")
+        )
         child = sub.substitute_item
         assert (child.status, child.ordered_qty, child.unit_price) == ("PENDING", 3, D("3.00"))
         assert StockLevel.objects.get(product=pricey).reserved == 3
@@ -288,7 +349,9 @@ class TestSubstitutionPolicies:
         ful.finish_picking(order, picker)
         order.refresh_from_db()
         it.refresh_from_db()
-        assert it.status == "SUBSTITUTED" and order.final_total == D("9.00") + D("4.00")  # pays the ORIGINAL price for the dearer product
+        assert it.status == "SUBSTITUTED" and order.final_total == D("9.00") + D(
+            "4.00"
+        )  # pays the ORIGINAL price for the dearer product
         assert Notification.objects.filter(order=order, kind="SUBSTITUTION_DECIDED").exists()
 
     def test_cheaper_substitute_passes_the_saving_on(self, shelf, slot, picker):
@@ -321,8 +384,16 @@ class TestSubstitutionPolicies:
         client = APIClient()
         view = client.get(f"/api/v1/orders/{order.number}/?token={order.tracking_token}").json()
         pending = view["pending_substitutions"][0]
-        assert pending["original"] == "Orange juice 1L" and pending["substitute"] == "Value orange juice 1L" and pending["charged_unit_price"] == "2.40"
-        res = client.post(f"/api/v1/orders/{order.number}/substitutions/{pending['id']}/?token={order.tracking_token}", {"approve": True}, format="json")
+        assert (
+            pending["original"] == "Orange juice 1L"
+            and pending["substitute"] == "Value orange juice 1L"
+            and pending["charged_unit_price"] == "2.40"
+        )
+        res = client.post(
+            f"/api/v1/orders/{order.number}/substitutions/{pending['id']}/?token={order.tracking_token}",
+            {"approve": True},
+            format="json",
+        )
         assert res.status_code == 200 and res.json()["pending_substitutions"] == []
         ful.pick_item(sub.substitute_item.id, 3, picker)
         ful.finish_picking(order, picker)
@@ -336,12 +407,20 @@ class TestSubstitutionPolicies:
         ful.mark_unavailable(it.id, picker)
         sub = ful.propose_substitution(it.id, cheap.id, picker)
         client = APIClient()
-        client.post(f"/api/v1/orders/{order.number}/substitutions/{sub.pk}/?token={order.tracking_token}", {"approve": False}, format="json")
+        client.post(
+            f"/api/v1/orders/{order.number}/substitutions/{sub.pk}/?token={order.tracking_token}",
+            {"approve": False},
+            format="json",
+        )
         it.refresh_from_db()
         sub.refresh_from_db()
         assert sub.status == "REJECTED" and it.status == "REMOVED" and sub.substitute_item.status == "REMOVED"
         assert StockLevel.objects.get(product=cheap).reserved == 0  # the held substitute stock was released
-        again = client.post(f"/api/v1/orders/{order.number}/substitutions/{sub.pk}/?token={order.tracking_token}", {"approve": True}, format="json")
+        again = client.post(
+            f"/api/v1/orders/{order.number}/substitutions/{sub.pk}/?token={order.tracking_token}",
+            {"approve": True},
+            format="json",
+        )
         assert again.status_code == 409  # one answer only
 
     def test_staff_can_record_a_phone_approval_and_it_is_logged_as_such(self, shelf, slot, picker):
@@ -361,7 +440,12 @@ class TestSubstitutionPolicies:
         sub = ful.propose_substitution(it.id, cheap.id, picker)
         stranger = APIClient()
         stranger.force_authenticate(make_user(email="evil@example.com"))
-        assert stranger.post(f"/api/v1/orders/{order.number}/substitutions/{sub.pk}/", {"approve": True}, format="json").status_code == 404
+        assert (
+            stranger.post(
+                f"/api/v1/orders/{order.number}/substitutions/{sub.pk}/", {"approve": True}, format="json"
+            ).status_code
+            == 404
+        )
         assert Substitution.objects.get().status == "AWAITING_CUSTOMER"
 
     def test_staff_can_remove_when_no_good_substitute_exists(self, shelf, slot, picker):
@@ -392,7 +476,11 @@ class TestSubstitutionEligibility:
     def check(self, a, b, branch):
         from apps.catalog.models import Product
 
-        fresh = lambda p: Product.objects.select_related("sale_unit", "net_content_unit").prefetch_related("claims", "allergens").get(pk=p.pk)  # noqa: E731
+        fresh = (
+            lambda p: Product.objects.select_related("sale_unit", "net_content_unit")
+            .prefetch_related("claims", "allergens")
+            .get(pk=p.pk)
+        )  # noqa: E731
         return ful.substitution_eligibility(fresh(a), fresh(b), branch.id, D("1"))
 
     def test_baseline_is_eligible(self, pair, branch):
@@ -450,12 +538,18 @@ class TestRefundsAndComplaints:
         order = delivered
         r1 = pay_services.request_refund(order, D("3.00"), "damaged milk", manager, "k1")
         payment = Payment.objects.get()
-        assert r1.status == "SUCCEEDED" and payment.refunded_amount == D("3.00") and payment.state == "PARTIALLY_REFUNDED"
+        assert (
+            r1.status == "SUCCEEDED" and payment.refunded_amount == D("3.00") and payment.state == "PARTIALLY_REFUNDED"
+        )
         order.refresh_from_db()
         assert order.payment_status == "PARTIALLY_REFUNDED"
         r2 = pay_services.request_refund(order, D("11.00"), "rest", manager, "k2")
         payment.refresh_from_db()
-        assert r2.status == "SUCCEEDED" and payment.state == "REFUNDED" and payment.refunded_amount == payment.captured_amount == D("14.00")
+        assert (
+            r2.status == "SUCCEEDED"
+            and payment.state == "REFUNDED"
+            and payment.refunded_amount == payment.captured_amount == D("14.00")
+        )
 
     def test_refund_retry_with_same_key_is_not_a_second_refund(self, delivered, manager):
         a = pay_services.request_refund(delivered, D("2.00"), "x", manager, "same-key")
@@ -481,9 +575,16 @@ class TestRefundsAndComplaints:
         monkeypatch.setattr(DemoProvider, "refund", down)
         refund = pay_services.request_refund(delivered, D("2.00"), "x", manager, "k")
         payment = Payment.objects.get()
-        assert refund.status == "PENDING" and "unreachable" in refund.failure_message and payment.refunded_amount == 0 and payment.state == "CAPTURED"
+        assert (
+            refund.status == "PENDING"
+            and "unreachable" in refund.failure_message
+            and payment.refunded_amount == 0
+            and payment.state == "CAPTURED"
+        )
         monkeypatch.undo()
-        retried = pay_services.request_refund(delivered, D("2.00"), "x", manager, "k")  # same key → provider call is repeated safely
+        retried = pay_services.request_refund(
+            delivered, D("2.00"), "x", manager, "k"
+        )  # same key → provider call is repeated safely
         assert retried.pk == refund.pk  # existing PENDING row returned; settle path is the provider event / retry job
         assert Refund.objects.count() == 1
 
@@ -496,12 +597,18 @@ class TestRefundsAndComplaints:
         ful.dispatch(order, picker)
         ful.complete(order, picker, collected_amount="14.00")
         refund = pay_services.request_refund(order, D("2.50"), "one bottle leaked", manager, "cod-1")
-        assert refund.method == "MANUAL" and refund.status == "PENDING" and Payment.objects.get().refunded_amount == 0  # nothing claimed yet
+        assert (
+            refund.method == "MANUAL" and refund.status == "PENDING" and Payment.objects.get().refunded_amount == 0
+        )  # nothing claimed yet
         with pytest.raises(Exception) as exc:  # noqa: PT011
             pay_services.complete_manual_refund(refund, "  ", manager)
         assert err_code(exc) == "VALIDATION_ERROR"
         done = pay_services.complete_manual_refund(refund, "CASH-RECEIPT-0042", manager)
-        assert done.status == "SUCCEEDED" and done.reference == "CASH-RECEIPT-0042" and Payment.objects.get().refunded_amount == D("2.50")
+        assert (
+            done.status == "SUCCEEDED"
+            and done.reference == "CASH-RECEIPT-0042"
+            and Payment.objects.get().refunded_amount == D("2.50")
+        )
 
     def test_unpaid_orders_cannot_be_refunded(self, milk, slot, manager):
         order = checkout(basket([(milk, 4)]), slot)
@@ -513,22 +620,45 @@ class TestRefundsAndComplaints:
         client = APIClient()
         client.force_authenticate(delivered.customer or user)
         c = APIClient()
-        res = c.post(f"/api/v1/orders/{delivered.number}/cases/?token={delivered.tracking_token}", {"kind": "DAMAGED", "description": "A bottle leaked in transit"}, format="json")
+        res = c.post(
+            f"/api/v1/orders/{delivered.number}/cases/?token={delivered.tracking_token}",
+            {"kind": "DAMAGED", "description": "A bottle leaked in transit"},
+            format="json",
+        )
         assert res.status_code == 201 and res.json()["status"] == "OPEN"
         # an item from a different order cannot be attached
-        res = c.post(f"/api/v1/orders/{delivered.number}/cases/?token={delivered.tracking_token}", {"kind": "MISSING", "description": "x", "order_item_id": 9999999}, format="json")
+        res = c.post(
+            f"/api/v1/orders/{delivered.number}/cases/?token={delivered.tracking_token}",
+            {"kind": "MISSING", "description": "x", "order_item_id": 9999999},
+            format="json",
+        )
         assert res.status_code == 400
         stranger = APIClient()
         stranger.force_authenticate(other_user)
-        assert stranger.post(f"/api/v1/orders/{delivered.number}/cases/", {"kind": "OTHER", "description": "hi"}, format="json").status_code == 404
+        assert (
+            stranger.post(
+                f"/api/v1/orders/{delivered.number}/cases/", {"kind": "OTHER", "description": "hi"}, format="json"
+            ).status_code
+            == 404
+        )
 
     def test_complaints_are_closed_after_the_window_and_before_receipt(self, delivered, milk, slot, settings_obj):
         from django.utils import timezone
 
-        Order.objects.filter(pk=delivered.pk).update(completed_at=timezone.now() - timezone.timedelta(hours=settings_obj.complaint_window_hours + 1))
+        Order.objects.filter(pk=delivered.pk).update(
+            completed_at=timezone.now() - timezone.timedelta(hours=settings_obj.complaint_window_hours + 1)
+        )
         c = APIClient()
-        res = c.post(f"/api/v1/orders/{delivered.number}/cases/?token={delivered.tracking_token}", {"kind": "DAMAGED", "description": "late"}, format="json")
+        res = c.post(
+            f"/api/v1/orders/{delivered.number}/cases/?token={delivered.tracking_token}",
+            {"kind": "DAMAGED", "description": "late"},
+            format="json",
+        )
         assert res.status_code == 409 and "within 24 hours" in res.json()["error"]["message"]
         fresh = checkout(basket([(milk, 3)]), slot, method="COD")
-        res = APIClient().post(f"/api/v1/orders/{fresh.number}/cases/?token={fresh.tracking_token}", {"kind": "OTHER", "description": "early"}, format="json")
+        res = APIClient().post(
+            f"/api/v1/orders/{fresh.number}/cases/?token={fresh.tracking_token}",
+            {"kind": "OTHER", "description": "early"},
+            format="json",
+        )
         assert res.status_code == 409
