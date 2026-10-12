@@ -740,3 +740,16 @@ class TestNotifications:
 
 def test_password_constant_is_used():
     assert PASSWORD
+
+
+class TestIdempotencyScope:
+    def test_two_shoppers_sending_the_same_client_key_each_get_their_own_order(self, milk, slot, make_slot):
+        """Idempotency keys are scoped per shopper: a key collision between strangers must not be an error."""
+        slot_b = make_slot(hour=12)
+        results = []
+        for slot_obj in (slot, slot_b):
+            client = APIClient()
+            client.post("/api/v1/cart/items/", {"product_id": milk.id, "quantity": "4"}, format="json")
+            results.append(place(client, payload(slot_obj, payment_method="COD"), key="same-key-from-two-people"))
+        assert [r.status_code for r in results] == [201, 201], [r.content for r in results]
+        assert results[0].json()["number"] != results[1].json()["number"]

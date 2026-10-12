@@ -14,6 +14,8 @@ USE_X_FORWARDED_HOST = env_bool(
     "USE_X_FORWARDED_HOST", True
 )  # the storefront proxies /api, so the public host arrives forwarded
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
+# Probes arrive over plain HTTP from inside the network (container HEALTHCHECK, load balancer) and must not be redirected.
+SECURE_REDIRECT_EXEMPT = [r"^healthz$", r"^readyz$"]
 # Secure by default. Only a local, plain-HTTP trial of the production stack (docker compose on localhost) turns these off.
 SECURE_COOKIES = env_bool("SECURE_COOKIES", True)
 SESSION_COOKIE_SECURE = SECURE_COOKIES

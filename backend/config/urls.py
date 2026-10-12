@@ -11,9 +11,13 @@ urlpatterns = [
     path("healthz", core_views.healthz),
     path("readyz", core_views.readyz),
     path("api/v1/", include("config.api_urls")),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]
+if settings.API_DOCS_ENABLED:
+    # The OpenAPI schema describes every staff endpoint, so it is opt-in outside DEBUG (see docs/security.md).
+    urlpatterns += [
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    ]
 if settings.DJANGO_ADMIN_ENABLED:
     # Break-glass tool for super admins. The staff dashboard is the supported interface, so this stays off in production
     # unless an operator turns it on deliberately (and ideally restricts the path at the reverse proxy).

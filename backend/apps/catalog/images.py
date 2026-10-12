@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import uuid
 
 from django.conf import settings
@@ -81,7 +82,12 @@ def save_processed(fieldfile, fileobj) -> list[int]:
     never has to hit the filesystem to discover variants.
     """
     original, variants = process(fileobj)
-    name = default_storage.get_available_name(fieldfile.field.generate_filename(fieldfile.instance, "upload.webp"))
+    # Always a fresh random name: media is served with a one-year `immutable` cache header, so a replacement image must
+    # never reuse the URL of the one it replaces.
+    folder = os.path.dirname(fieldfile.field.generate_filename(fieldfile.instance, "upload.webp"))
+    name = default_storage.get_available_name(
+        f"{folder}/{uuid.uuid4().hex}.webp" if folder else f"{uuid.uuid4().hex}.webp"
+    )
     saved = default_storage.save(name, ContentFile(original))
     for width, data in variants.items():
         default_storage.save(variant_name(saved, width), ContentFile(data))

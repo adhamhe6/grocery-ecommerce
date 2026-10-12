@@ -61,6 +61,7 @@ def order_row(o: Order) -> dict:
         "slot_ends_at": o.slot_ends_at,
         "customer": o.contact_name,
         "is_guest": o.customer_id is None,
+        "customer_id": o.customer_id,
         "branch": o.branch.name,
         "branch_id": o.branch_id,
         "total": str(o.total),
@@ -90,6 +91,8 @@ def staff_item(item: OrderItem, lots: dict[int, list]) -> dict:
         "category": p.category.name,
         "ordered_qty": qs_str(item.ordered_qty),
         "picked_qty": qs_str(item.picked_qty),
+        "qty_min": qs_str(p.qty_min),  # the product's ordering rules, so a picking UI steps correctly
+        "qty_step": qs_str(p.qty_step),
         "unit_price": str(item.unit_price),
         "line_total_estimated": str(item.line_total_estimated),
         "line_total_final": str(item.line_total_final) if item.line_total_final is not None else None,

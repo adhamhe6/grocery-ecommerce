@@ -367,3 +367,24 @@ class TestZonesAndSlots:
         res = admin.post("/api/v1/admin/closures/", {"branch": branch.id, "date": day2.isoformat()}, format="json")
         assert res.status_code == 409 and "already booked" in res.json()["error"]["message"]
         assert not BranchClosure.objects.filter(date=day2).exists()  # the whole request rolled back? (see below)
+
+
+class TestConcurrentDuplicates:
+    def test_a_unique_constraint_race_is_a_409_not_a_500_and_leaves_no_audit_entry(self, admin, monkeypatch):
+        """Two staff creating the same record at the same instant: the loser must get an actionable 409."""
+        from django.db import IntegrityError
+        from rest_framework import serializers as drf_serializers
+
+        original = drf_serializers.ModelSerializer.save
+
+        def racing_save(self, **kwargs):
+            if self.Meta.model is Branch:
+                raise IntegrityError("duplicate key value violates unique constraint")
+            return original(self, **kwargs)
+
+        monkeypatch.setattr(drf_serializers.ModelSerializer, "save", racing_save)
+        before = AuditLog.objects.count()
+        res = admin.post("/api/v1/admin/branches/", TestBranchesAndHours().payload(), format="json")
+        assert res.status_code == 409, res.content
+        assert res.json()["error"]["code"] == "INVALID_STATE"
+        assert AuditLog.objects.count() == before

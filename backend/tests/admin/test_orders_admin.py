@@ -349,3 +349,17 @@ class TestListsQueueAndDetail:
         assert retry.status_code == 200, retry.content
         assert retry.json()["refund_result"]["id"] == rid
         assert len(retry.json()["refunds"]) == 1
+        # …but the same key with a different amount is a conflict, never a silent success with the wrong figure.
+        wrong = manager.post(f"{BASE}{order.number}/refund/", {**body, "amount": "1.00"}, format="json")
+        assert wrong.status_code == 422 and wrong.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+class TestStaffPayloadHelpsTheUi:
+    def test_rows_carry_the_customer_id_and_items_the_quantity_rules(self, manager, shop_client, slot, cheese):
+        client = APIClient()
+        client.post("/api/v1/cart/items/", {"product_id": cheese.id, "quantity": "1.5"}, format="json")
+        number = place(client, payload(slot, payment_method="COD")).json()["number"]
+        row = next(r for r in results(manager.get(BASE)) if r["number"] == number)
+        assert row["customer_id"] is None and row["is_guest"] is True
+        item = manager.get(f"{BASE}{number}/").json()["items"][0]
+        assert item["qty_min"] == "0.25" and item["qty_step"] == "0.25"

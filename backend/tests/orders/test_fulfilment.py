@@ -476,11 +476,13 @@ class TestSubstitutionEligibility:
     def check(self, a, b, branch):
         from apps.catalog.models import Product
 
-        fresh = (
-            lambda p: Product.objects.select_related("sale_unit", "net_content_unit")
-            .prefetch_related("claims", "allergens")
-            .get(pk=p.pk)
-        )  # noqa: E731
+        def fresh(p):
+            return (
+                Product.objects.select_related("sale_unit", "net_content_unit")
+                .prefetch_related("claims", "allergens")
+                .get(pk=p.pk)
+            )
+
         return ful.substitution_eligibility(fresh(a), fresh(b), branch.id, D("1"))
 
     def test_baseline_is_eligible(self, pair, branch):

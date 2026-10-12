@@ -46,6 +46,9 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "")
 DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
+# Reverse proxies in front of this process that append to X-Forwarded-For (see apps/core/net.py). 0 = trust only the socket.
+TRUSTED_PROXY_COUNT = env_int("TRUSTED_PROXY_COUNT", 0)
+API_DOCS_ENABLED = env_bool("API_DOCS_ENABLED", DEBUG)  # /api/schema/ and /api/docs/; opt-in outside DEBUG
 DJANGO_ADMIN_ENABLED = env_bool("DJANGO_ADMIN_ENABLED", DEBUG)  # off by default outside DEBUG; see config/urls.py
 
 INSTALLED_APPS = [
@@ -72,7 +75,6 @@ INSTALLED_APPS = [
     "apps.content",
     "apps.notifications",
     "apps.reports",
-    "apps.loyalty",
 ]
 
 MIDDLEWARE = [
@@ -170,6 +172,7 @@ CSRF_COOKIE_HTTPONLY = False  # the SPA reads it to send X-CSRFToken
 
 # ---------------------------------------------------------------- DRF
 REST_FRAMEWORK = {
+    "NUM_PROXIES": TRUSTED_PROXY_COUNT,  # throttle identity: same rule as apps/core/net.py
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.core.authentication.CSRFSessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["apps.core.renderers.DecimalSafeJSONRenderer"],

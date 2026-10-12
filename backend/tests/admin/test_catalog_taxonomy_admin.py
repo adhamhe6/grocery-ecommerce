@@ -140,6 +140,16 @@ class TestCategories:
         dept.refresh_from_db()
         assert not dept.image and dept.image_widths == [] and stored_files(media) == set()
 
+    def test_a_new_upload_never_reuses_an_earlier_image_url(self, admin, dept, media):
+        """Media is served `immutable` for a year, so a name that was ever used must never come back with new content."""
+        seen = set()
+        for _ in range(3):
+            admin.post(f"{self.URL}{dept.id}/image/", {"image": upload("PNG")}, format="multipart")
+            dept.refresh_from_db()
+            assert dept.image.name not in seen
+            seen.add(dept.image.name)
+            admin.delete(f"{self.URL}{dept.id}/image/")  # frees the name under the old scheme
+
     @pytest.mark.parametrize("kind", sorted(BAD_UPLOADS))
     def test_unsafe_category_images_are_rejected(self, kind, admin, dept, media):
         res = admin.post(f"{self.URL}{dept.id}/image/", {"image": BAD_UPLOADS[kind]()}, format="multipart")

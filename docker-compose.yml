@@ -19,6 +19,8 @@ x-backend: &backend
     BACKEND_PUBLIC_URL: http://backend:8000
     MEDIA_ROOT: /data/media
     SERVE_MEDIA: "true" # demo/single-host only; use object storage or a CDN in production
+    API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true} # /api/docs for the local trial; leave off in production
+    TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1} # the storefront proxy appends the client address; add 1 per proxy in front of it
     SECURE_COOKIES: ${SECURE_COOKIES:-true}
     SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-true}
     SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-31536000}
@@ -58,7 +60,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
     volumes:
       - redisdata:/data
     healthcheck:

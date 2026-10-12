@@ -8,6 +8,7 @@ computed by exactly the code that later charges them. Nothing the browser sends 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -453,7 +454,10 @@ def place_order(*, cart: Cart | None, user, data: CheckoutInput, idempotency_key
             raise DomainError(ErrorCode.CART_EMPTY, "Your basket is empty.", status_code=409)
 
         p = prepare(cart, user, data)
-        order, items = _create_order(p, user, data, idempotency_key)
+        # Idempotency is scoped per actor, so the order's own (globally unique) key must be too: two different shoppers
+        # that happen to send the same client-generated key must never collide on the order table.
+        order_key = hashlib.sha256(f"{actor_key}|{idempotency_key}".encode()).hexdigest()
+        order, items = _create_order(p, user, data, order_key)
 
         reserve_requests = [
             inventory.ReserveRequest(item, ln.product, ln.quantity) for item, ln in zip(items, p.lines, strict=True)

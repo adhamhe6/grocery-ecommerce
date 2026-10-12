@@ -22,6 +22,7 @@ from rest_framework.views import APIView
 
 from apps.core.async_utils import safe_delay
 from apps.core.exceptions import DomainError
+from apps.core.net import client_ip
 
 from .models import Address, User
 from .serializers import (
@@ -44,8 +45,7 @@ LOCKOUT_SECONDS = 15 * 60
 
 
 def _client_ip(request) -> str:
-    fwd = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return (fwd.split(",")[0].strip() if fwd else request.META.get("REMOTE_ADDR", "")) or "unknown"
+    return client_ip(request) or "unknown"
 
 
 def _email_fingerprint(email: str) -> str:

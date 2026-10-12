@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -182,9 +181,7 @@ class Migration(migrations.Migration):
                 ("is_published", models.BooleanField(default=True)),
                 (
                     "products",
-                    models.ManyToManyField(
-                        blank=True, related_name="articles", to="catalog.product"
-                    ),
+                    models.ManyToManyField(blank=True, related_name="articles", to="catalog.product"),
                 ),
             ],
             options={

@@ -340,6 +340,18 @@ def _complete_refund(refund: Refund) -> None:
     )
 
 
+def _same_refund_or_conflict(refund: Refund, amount: Decimal) -> Refund:
+    """An idempotency key identifies *one* request. Replaying it returns that refund; reusing it for a different amount is
+    a client bug that must not silently succeed with the wrong figure."""
+    if money(amount) != refund.amount:
+        raise DomainError(
+            ErrorCode.IDEMPOTENCY_CONFLICT,
+            "This request key was already used for a refund of a different amount. Please refresh and try again.",
+            status_code=422,
+        )
+    return refund
+
+
 def request_refund(
     order, amount: Decimal, reason: str, actor, idempotency_key: str, *, support_case=None, manual: bool = False
 ) -> Refund:
@@ -348,7 +360,7 @@ def request_refund(
     # A retry of a request that already fully refunded the order must return that refund, not "nothing left to refund".
     previous = Refund.objects.filter(order=order, idempotency_key=idempotency_key).first()
     if previous:
-        return previous
+        return _same_refund_or_conflict(previous, amount)
     payment = (
         Payment.objects.select_for_update(of=("self",))
         .filter(order=order, state__in=[PaymentState.CAPTURED, PaymentState.PARTIALLY_REFUNDED])
@@ -361,7 +373,7 @@ def request_refund(
         )
     existing = Refund.objects.filter(payment=payment, idempotency_key=idempotency_key).first()
     if existing:
-        return existing  # retry of the same request: never a second refund
+        return _same_refund_or_conflict(existing, amount)  # retry of the same request: never a second refund
     amount = money(amount)
     if amount <= 0:
         raise DomainError(ErrorCode.VALIDATION_ERROR, "Refund amount must be greater than zero.")

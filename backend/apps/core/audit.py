@@ -4,13 +4,11 @@ from typing import Any
 
 from .logging import get_request_id
 from .models import AuditLog
+from .net import client_ip
 
 
 def _client_ip(request) -> str | None:
-    if request is None:
-        return None
-    fwd = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return (fwd.split(",")[0].strip() if fwd else request.META.get("REMOTE_ADDR")) or None
+    return client_ip(request)
 
 
 def record(

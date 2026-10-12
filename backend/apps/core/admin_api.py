@@ -16,12 +16,13 @@ import datetime as dt
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Model
 from rest_framework import filters, viewsets
 from rest_framework.permissions import IsAuthenticated
 
 from apps.core import audit
+from apps.core.exceptions import DomainError, ErrorCode
 from apps.core.permissions import HasCapability, IsStaffUser, branch_ids_for, can_access_branch, scope_by_branch
 
 SENSITIVE_FIELDS = {"password", "token", "secret", "tracking_token"}
@@ -78,9 +79,31 @@ class AdminViewSet(viewsets.ModelViewSet):
         if branch is not None:
             ensure_branch_access(self.request.user, getattr(branch, "pk", branch))
 
+    @staticmethod
+    def _conflict() -> DomainError:
+        return DomainError(
+            ErrorCode.INVALID_STATE,
+            "That conflicts with an existing record (a unique value was just taken). Please reload and try again.",
+            status_code=409,
+        )
+
     # Each write and its audit entry commit together or not at all: there is never a change without a record of it.
+    # A concurrent duplicate (unique-constraint race) is a 409 the client can act on, never a 500.
     def perform_create(self, serializer):
         self.check_write_scope(serializer.validated_data)
+        try:
+            self._create_and_audit(serializer)
+        except IntegrityError:
+            raise self._conflict() from None
+
+    def perform_update(self, serializer):
+        self.check_write_scope(serializer.validated_data)
+        try:
+            self._update_and_audit(serializer)
+        except IntegrityError:
+            raise self._conflict() from None
+
+    def _create_and_audit(self, serializer):
         with transaction.atomic():
             instance = serializer.save()
             audit.record(
@@ -91,8 +114,7 @@ class AdminViewSet(viewsets.ModelViewSet):
                 request=self.request,
             )
 
-    def perform_update(self, serializer):
-        self.check_write_scope(serializer.validated_data)
+    def _update_and_audit(self, serializer):
         with transaction.atomic():
             before = snapshot(serializer.instance, self.audit_exclude)
             instance = serializer.save()
