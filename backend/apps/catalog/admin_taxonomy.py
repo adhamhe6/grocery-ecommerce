@@ -5,19 +5,18 @@ from __future__ import annotations
 from django.db import transaction
 from django.db.models import Count, Q
 from drf_spectacular.utils import extend_schema
-from rest_framework import serializers, status
+from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.core import audit
-from apps.core.admin_api import snapshot
 from apps.core.admin_utils import (
     AdminReadOnlyViewSet,
     AuditedViewSet,
     ImageFileSerializer,
+    SingleImageMixin,
     delete_image_files,
-    store_image,
     unique_slug,
 )
 from apps.core.exceptions import DomainError, ErrorCode
@@ -54,7 +53,7 @@ class CategorySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
         extra_kwargs = {"slug": {"required": False}}
 
-    def get_image(self, obj):
+    def get_image(self, obj) -> dict:
         return obj.image_urls()
 
     def validate_parent(self, parent):
@@ -79,7 +78,7 @@ class CategorySerializer(serializers.ModelSerializer):
         return attrs
 
 
-class CategoryViewSet(AuditedViewSet):
+class CategoryViewSet(SingleImageMixin, AuditedViewSet):
     queryset = Category.objects.select_related("parent").order_by("parent_id", "sort_order", "name")
     serializer_class = CategorySerializer
     read_capability = "catalog.read"
@@ -156,47 +155,7 @@ class CategoryViewSet(AuditedViewSet):
     @extend_schema(request=ImageFileSerializer, responses={200: CategorySerializer, 204: None})
     @action(detail=True, methods=["post", "delete"], url_path="image", parser_classes=[MultiPartParser, FormParser])
     def image(self, request, pk=None):
-        category = self.get_object()
-        old_name, old_widths = (category.image.name if category.image else None), list(category.image_widths)
-        before = snapshot(category)
-        if request.method == "DELETE":
-            with transaction.atomic():
-                category.image, category.image_widths = None, []
-                category.save(update_fields=["image", "image_widths", "updated_at"])
-                audit.record(
-                    request.user,
-                    "category.image_removed",
-                    category,
-                    before=before,
-                    after=snapshot(category),
-                    request=request,
-                )
-            delete_image_files(old_name, old_widths)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        upload = ImageFileSerializer(data=request.data)
-        upload.is_valid(raise_exception=True)
-        uploaded = upload.validated_data["image"]
-        stored = None
-        try:
-            with transaction.atomic():
-                widths = store_image(category.image, uploaded)
-                stored = (category.image.name, widths)
-                category.image_widths = widths
-                category.save(update_fields=["image", "image_widths", "updated_at"])
-                audit.record(
-                    request.user,
-                    "category.image_updated",
-                    category,
-                    before=before,
-                    after=snapshot(category),
-                    request=request,
-                )
-        except Exception:
-            if stored:
-                delete_image_files(*stored)
-            raise
-        delete_image_files(old_name, old_widths)  # the replaced picture and its variants
-        return Response(self.get_serializer(self.get_object()).data)
+        return self.handle_image(request)
 
 
 # =============================================================================================== brands
@@ -290,6 +249,13 @@ class CollectionSerializer(serializers.ModelSerializer):
 
 class CollectionProductsSerializer(serializers.Serializer):
     product_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=True, max_length=500)
+
+    def to_internal_value(self, data):
+        if (
+            isinstance(data, dict) and "product_ids" not in data and "products" in data
+        ):  # accept {"products": [...]} too
+            data = {**data, "product_ids": data["products"]}
+        return super().to_internal_value(data)
 
     def validate_product_ids(self, value):
         if len(value) != len(set(value)):
@@ -409,7 +375,7 @@ class ReviewModerationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_product(self, obj):
+    def get_product(self, obj) -> dict:
         return {"id": obj.product_id, "sku": obj.product.sku, "name": obj.product.name}
 
 

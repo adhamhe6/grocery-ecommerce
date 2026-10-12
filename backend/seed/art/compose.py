@@ -46,10 +46,10 @@ def paste_item(canvas: Image.Image, cut: Image.Image, cx: float, ground: float, 
 
 
 TILE_LAYOUT = {
-    1: [(450, 700, 620, 520)],
-    2: [(290, 668, 430, 450), (620, 706, 450, 470)],
-    3: [(290, 548, 380, 380), (615, 560, 380, 380), (452, 742, 470, 480)],
-    4: [(270, 520, 340, 340), (632, 524, 340, 340), (296, 750, 390, 400), (610, 756, 390, 400)],
+    1: [(450, 740, 680, 560)],
+    2: [(280, 720, 450, 520), (630, 740, 460, 540)],
+    3: [(240, 760, 400, 460), (660, 760, 400, 460), (450, 650, 400, 470)],
+    4: [(240, 600, 340, 370), (660, 600, 340, 370), (270, 790, 400, 430), (630, 790, 400, 430)],
 }
 
 
@@ -68,12 +68,12 @@ def tile(cutouts: list[Image.Image], dept: str, size: int = 900) -> Image.Image:
 
 
 BANNER_LAYOUT = [
-    (1010, 540, 330, 330),
-    (1290, 530, 340, 340),
-    (1500, 560, 270, 290),
-    (1000, 800, 400, 400),
-    (1310, 820, 430, 430),
-    (1530, 830, 250, 300),
+    (1130, 862, 420, 440),  # hero item
+    (830, 842, 300, 370),
+    (1405, 852, 300, 390),
+    (985, 625, 290, 310),
+    (1265, 615, 290, 310),
+    (1470, 625, 190, 250),
 ]
 
 
@@ -92,6 +92,24 @@ def banner(cutouts: list[Image.Image], top: str, bottom: str, size=(1600, 900), 
         cx, ground, mw, mh = slot
         paste_item(canvas, by_slot[slot], cx, ground, mw, mh)
     return ImageOps.mirror(canvas) if mirror else canvas
+
+
+ARTICLE_LAYOUT = [(300, 560, 300, 340), (900, 566, 300, 340), (600, 730, 380, 400)]
+ARTICLE_TINT = {"RECIPE": ("#F6E7CF", "#E8C9A0"), "GUIDE": ("#E6EBD6", "#CAD6B0")}
+
+
+def article_card(cutouts: list[Image.Image], kind: str, size=(1200, 800)) -> Image.Image:
+    w, h = size
+    top, bottom = ARTICLE_TINT[kind]
+    canvas = gradient(size, top, bottom)
+    glow = Image.new("L", size, 0)
+    ImageDraw.Draw(glow).ellipse((w * 0.12, h * 0.02, w * 0.88, h * 1.02), fill=130)
+    canvas.paste(Image.new("RGB", size, (255, 251, 240)), (0, 0), glow.filter(ImageFilter.GaussianBlur(60)))
+    for cut, (cx, ground, mw, mh) in zip(
+        cutouts, sorted(ARTICLE_LAYOUT[: len(cutouts)], key=lambda s_: s_[1]), strict=False
+    ):
+        paste_item(canvas, cut, cx, ground, mw, mh)
+    return canvas
 
 
 def contact_sheet(images: list[tuple[str, Image.Image]], path: str, cols: int = 6, tile_px: int = 300) -> None:

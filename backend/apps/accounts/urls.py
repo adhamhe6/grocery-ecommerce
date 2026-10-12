@@ -8,6 +8,7 @@ router.register("addresses", views.AddressViewSet, basename="address")
 
 urlpatterns = [
     path("auth/csrf/", views.CsrfView.as_view(), name="auth-csrf"),
+    path("auth/session/", views.SessionView.as_view(), name="auth-session"),
     path("auth/register/", views.RegisterView.as_view(), name="auth-register"),
     path("auth/login/", views.LoginView.as_view(), name="auth-login"),
     path("auth/logout/", views.LogoutView.as_view(), name="auth-logout"),

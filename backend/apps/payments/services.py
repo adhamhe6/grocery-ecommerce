@@ -345,6 +345,10 @@ def request_refund(
 ) -> Refund:
     """Refund part or all of what was *actually captured*. Never changes a status without the provider (or a staff
     confirmation for manual refunds) saying the money moved."""
+    # A retry of a request that already fully refunded the order must return that refund, not "nothing left to refund".
+    previous = Refund.objects.filter(order=order, idempotency_key=idempotency_key).first()
+    if previous:
+        return previous
     payment = (
         Payment.objects.select_for_update(of=("self",))
         .filter(order=order, state__in=[PaymentState.CAPTURED, PaymentState.PARTIALLY_REFUNDED])

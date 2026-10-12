@@ -154,40 +154,39 @@ def fruit(kind="apple", c="#B83A32", blush=None, n=3, leaf_on=True, **_) -> str:
 
 # --------------------------------------------------------------------------- tomatoes on the vine
 def tomato_vine(c="#C8402F", **kw) -> str:
-    """Tomatoes resting on the ground with their vine draped behind them."""
+    """Tomatoes resting on the ground with their vine draped across the top."""
     count = max(3, min(int(kw.get("n", 5)), 6))
-    slots = sorted(LAYOUTS_VINE[count], key=lambda t: t[1])
-    tops = []
-    fruit_svg = ""
+    slots = sorted(LAYOUT_VINE[count], key=lambda t: t[1])
+    tops, fruit_svg = [], ""
     for k, (x, ground, s_, r) in enumerate(slots):
-        top = ground - 190 * s_
-        tops.append((x, top + 14 * s_))
+        tops.append((x, ground - 178 * s_))
         fruit_svg += contact(x, ground, 88 * s_, 13 * s_, 0.22)
         fruit_svg += place(fruit_unit("tomato", vary(c, k, 0.03), None, False, k), x, ground - UNIT_BASE * s_, s_, r)
     pts = sorted(tops)
-    path = f"M{n(pts[0][0] - 90)},{n(pts[0][1] + 24)}"
-    prev = (pts[0][0] - 90, pts[0][1] + 24)
+    x0, y0 = pts[0][0] - 120, pts[0][1] + 30
+    path = f"M{n(x0)},{n(y0)}"
+    prev = (x0, y0)
     for x, y in pts:
-        path += f" Q{n((prev[0] + x) / 2)},{n(min(prev[1], y) - 40)} {n(x)},{n(y - 6)}"
-        prev = (x, y - 6)
-    path += f" Q{n(prev[0] + 60)},{n(prev[1] - 30)} {n(prev[0] + 110)},{n(prev[1] + 26)}"
+        path += f" Q{n((prev[0] + x) / 2)},{n(min(prev[1], y) - 46)} {n(x)},{n(y - 8)}"
+        prev = (x, y - 8)
+    path += f" Q{n(prev[0] + 70)},{n(prev[1] - 36)} {n(prev[0] + 130)},{n(prev[1] + 30)}"
     vine = stroke_path(path, 15, "#4F8A3C") + stroke_path(path, 6, "#86B85A", 0.8)
-    vine += place(leaf(110, 62, "#4F8A4B", wave=0.1, k=3, rot=-58, depth=7), pts[0][0] - 70, pts[0][1] + 10)
-    vine += place(leaf(110, 62, "#5A9A52", wave=0.1, k=3, rot=64, depth=7), pts[-1][0] + 90, pts[-1][1] + 10)
+    vine += place(leaf(120, 66, "#4F8A4B", wave=0.1, k=3, rot=-58, depth=7), x0 + 20, y0 + 6)
+    vine += place(leaf(120, 66, "#5A9A52", wave=0.1, k=3, rot=64, depth=7), prev[0] + 100, prev[1] + 20)
     return vine + fruit_svg
 
 
-LAYOUTS_VINE = {
-    3: [(-130, 252, 1.55, -5), (0, 200, 1.5, 3), (140, 254, 1.55, 6)],
-    4: [(-190, 254, 1.4, -6), (-60, 214, 1.4, 3), (70, 256, 1.45, -3), (200, 236, 1.4, 6)],
-    5: [(-210, 250, 1.3, -6), (-100, 214, 1.3, 3), (10, 258, 1.38, -2), (120, 214, 1.3, 5), (222, 246, 1.3, 7)],
+LAYOUT_VINE = {
+    3: [(0, 190, 1.55, 3), (-110, 252, 1.55, -5), (118, 254, 1.55, 6)],
+    4: [(-70, 186, 1.5, 3), (80, 190, 1.5, -3), (-150, 254, 1.5, -6), (160, 256, 1.5, 6)],
+    5: [(-70, 180, 1.45, 3), (80, 184, 1.45, -3), (-160, 252, 1.45, -6), (0, 262, 1.5, -2), (160, 254, 1.45, 6)],
     6: [
-        (-230, 250, 1.2, -6),
-        (-130, 212, 1.2, 3),
-        (-20, 258, 1.3, -2),
-        (90, 214, 1.2, 5),
-        (190, 258, 1.24, 7),
-        (270, 230, 1.1, 5),
+        (-120, 176, 1.35, 3),
+        (30, 176, 1.35, -3),
+        (160, 190, 1.3, 4),
+        (-200, 252, 1.35, -6),
+        (-30, 262, 1.4, 0),
+        (150, 262, 1.4, 6),
     ],
 }
 
@@ -321,7 +320,7 @@ def strawberry(c: str, i: int) -> str:
             x = xi * 17 + (8 if row % 2 else 0)
             if abs(x) < span:
                 out += ell(x, y, 2.6, 4)('fill="#F5DC84" opacity=".92"')
-    for k, ang in enumerate([-62, -28, 0, 28, 62]):
+    for ang in [-62, -28, 0, 28, 62]:
         out += place(leaf(30, 16, "#4C9446", vein=False, depth=3), 0, -42, 1, ang)
     out += line(0, -44, 2, -62, 6, "#4C9446")
     out += shine(-30, -18, 10, 16, -20, 0.38)
@@ -456,7 +455,7 @@ def leaves(kind="romaine", c="#4E9A4B", c2=None, **_) -> str:
             )
         return place(out, 0, -12)
     # butterhead-style rosette
-    for ring, (cnt, r, s) in enumerate([(9, 120, 1.0), (7, 78, 0.8), (5, 36, 0.6)]):
+    for ring, (cnt, _r, s) in enumerate([(9, 120, 1.0), (7, 78, 0.8), (5, 36, 0.6)]):
         for k in range(cnt):
             a = 360 * k / cnt + ring * 20
             out += place(
@@ -469,9 +468,8 @@ def leaves(kind="romaine", c="#4E9A4B", c2=None, **_) -> str:
 def herbs(kind="basil", c="#3E8E41", **_) -> str:
     out = ""
     stems = [(-34, -16, 300), (-12, -6, 330), (14, 8, 330), (36, 18, 300), (0, 0, 280)]
-    tie_y = 140
     # stems first
-    for k, (x, ang, ln) in enumerate(stems):
+    for x, ang, ln in stems:
         out += place(line(0, 0, 0, -ln, 7, "#7DA84E"), x * 0.55, 215, 1, ang)
     # leaves
     for k, (x, ang, ln) in enumerate(stems):
@@ -738,7 +736,7 @@ def corn_unit(i: int) -> str:
 
 
 def gourd(kind="cucumber", c=None, n=2, **_) -> str:
-    c = c or {"cucumber": "#3F7F3A", "zucchini": "#4A8A44", "eggplant": "#4B2A5E", "corn": "#F0C93C"}[kind]
+    c = c or {"cucumber": "#5E9E4A", "zucchini": "#2F6A3A", "eggplant": "#4B2A5E", "corn": "#F0C93C"}[kind]
     if kind in ("cucumber", "zucchini"):
         cnt = max(1, min(int(n), 3))
         out = ""
@@ -748,7 +746,7 @@ def gourd(kind="cucumber", c=None, n=2, **_) -> str:
         for k, (x, y, r) in enumerate(slots):
             out += contact(x, y + 60, 190, 14) + place(cucumber_unit(vary(c, k, 0.03), k, kind), x, y, 1.18, r)
         if kind == "cucumber":  # a couple of slices in front
-            for k, (x, y) in enumerate([(-160, 170), (-60, 196)]):
+            for x, y in [(-160, 170), (-60, 196)]:
                 out += place(
                     circle(0, 0, 44, "#C6DE8E")
                     + circle(0, 0, 38, "#E8F2C4")

@@ -101,7 +101,7 @@ jobs:
         working-directory: backend
         run: |
           python manage.py migrate --noinput
-          python manage.py seed_demo --yes-i-know-this-is-demo-data
+          python manage.py seed_demo
       - name: Start API
         working-directory: backend
         run: nohup python manage.py runserver 127.0.0.1:8000 --noreload > /tmp/api.log 2>&1 &

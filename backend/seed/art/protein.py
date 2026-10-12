@@ -63,7 +63,9 @@ def meat(kind="breast", c="#F1C2A6", **_) -> str:
         for k in range(26):
             a = k * 2.399963 + 1
             r = math.sqrt((k + 0.5) / 26)
-            out += ell(math.cos(a) * 150 * r, -72 + math.sin(a) * 26 * r, 8, 3.4, (k * 31) % 180)('fill="#F4D6CC" opacity=".4"')
+            out += ell(math.cos(a) * 150 * r, -72 + math.sin(a) * 26 * r, 8, 3.4, (k * 31) % 180)(
+                'fill="#F4D6CC" opacity=".4"'
+            )
         return place(out + _film(), 0, 10)
     # steak / chop
     d = "M-150,0 C-150,-60 -80,-92 0,-92 C90,-92 150,-50 150,4 C150,52 90,80 0,80 C-80,80 -150,56 -150,0 Z"
@@ -107,7 +109,12 @@ def fish(kind="salmon", c="#F0875B", **_) -> str:
     if kind == "salmon":
         for k in range(7):
             x = -150 + k * 46
-            fil += stroke_path(f"M{x},{-34 + abs(k - 3) * 4} C{x + 18},{-10} {x + 14},{20} {x - 6},{54 - abs(k - 3) * 4}", 8, "#FCE3D2", 0.7)
+            fil += stroke_path(
+                f"M{x},{-34 + abs(k - 3) * 4} C{x + 18},{-10} {x + 14},{20} {x - 6},{54 - abs(k - 3) * 4}",
+                8,
+                "#FCE3D2",
+                0.7,
+            )
         out += place(fil, 0, -60)
         out += place(stroke_path("M-190,40 C-110,70 90,72 196,22", 10, "#B9C2C7", 0.9), 0, -60)
     else:
@@ -117,7 +124,9 @@ def fish(kind="salmon", c="#F0875B", **_) -> str:
         out += place(fil, 0, -60)
     out += shine(-90, -108, 50, 7, -8, 0.4)
     # lemon wedge garnish
-    wedge = body(pth("M-50,0 A50,50 0 0 1 50,0 Z"), "#F0CE3A", depth=5, shade=0.22) + pth("M-38,-2 A38,38 0 0 1 38,-2 Z")('fill="#FAEE9A"')
+    wedge = body(pth("M-50,0 A50,50 0 0 1 50,0 Z"), "#F0CE3A", depth=5, shade=0.22) + pth(
+        "M-38,-2 A38,38 0 0 1 38,-2 Z"
+    )('fill="#FAEE9A"')
     out += place(wedge, 150, -22, 0.8, 8)
     return place(out + _film(500, 200, -170), 0, 24)
 
@@ -125,7 +134,7 @@ def fish(kind="salmon", c="#F0875B", **_) -> str:
 def shrimp(c="#F29C7A") -> str:
     out = tray(480, 56)
     units = [(-170, -52, -6, 0.9), (20, -50, 8, 0.95), (200, -44, -12, 0.85)]
-    for k, (x, y, r, s) in enumerate(units):
+    for x, y, r, s in units:
         seg = ""
         total = 17
         end = 200
@@ -134,8 +143,15 @@ def shrimp(c="#F29C7A") -> str:
             a = math.radians(-20 + end * t)
             px, py = math.cos(a) * 66, math.sin(a) * 66
             size = 36 - 17 * t
-            seg += body(ell(px, py, size, size * 0.62, math.degrees(a) + 90), tone(c, 0.04 * math.sin(j * 1.4)), depth=5, shade=0.26)
-            seg += stroke_path(f"M{px - size * 0.75:.1f},{py:.1f} L{px + size * 0.75:.1f},{py:.1f}", 3, darken(c, 0.3), 0.3)
+            seg += body(
+                ell(px, py, size, size * 0.62, math.degrees(a) + 90),
+                tone(c, 0.04 * math.sin(j * 1.4)),
+                depth=5,
+                shade=0.26,
+            )
+            seg += stroke_path(
+                f"M{px - size * 0.75:.1f},{py:.1f} L{px + size * 0.75:.1f},{py:.1f}", 3, darken(c, 0.3), 0.3
+            )
         tail = math.radians(-20 + end)
         tx, ty = math.cos(tail) * 66, math.sin(tail) * 66
         for ang in (80, 120, 160):

@@ -20,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.utils.text import slugify
 from rest_framework import serializers, viewsets
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
+from rest_framework.response import Response
 
 from apps.catalog import images
 from apps.core import audit
@@ -109,6 +110,66 @@ def delete_image_files(name: str | None, widths=None) -> None:
             default_storage.delete(item)
         except Exception:  # noqa: BLE001 - an orphaned file must never break the request that removed its row
             logger.warning("image_delete_failed", extra={"name": item})
+
+
+class SingleImageMixin:
+    """Upload / replace / remove the one picture of a model with `image` + `image_widths` (category, banner, article).
+
+    Add to an `AuditedViewSet` and expose with::
+
+        @action(detail=True, methods=["post", "delete"], url_path="image", parser_classes=[MultiPartParser, FormParser])
+        def image(self, request, pk=None):
+            return self.handle_image(request)
+    """
+
+    def handle_image(self, request):
+        instance = self.get_object()
+        old_name = instance.image.name if instance.image else None
+        old_widths = list(instance.image_widths or [])
+        before = snapshot(instance)
+        if request.method == "DELETE":
+            with transaction.atomic():
+                instance.image, instance.image_widths = None, []
+                instance.save(
+                    update_fields=["image", "image_widths"]
+                    + (["updated_at"] if hasattr(instance, "updated_at") else [])
+                )
+                audit.record(
+                    request.user,
+                    f"{self.label}.image_removed",
+                    instance,
+                    before=before,
+                    after=snapshot(instance),
+                    request=request,
+                )
+            delete_image_files(old_name, old_widths)
+            return Response(status=204)
+        upload = ImageFileSerializer(data=request.data)
+        upload.is_valid(raise_exception=True)
+        stored = None
+        try:
+            with transaction.atomic():
+                widths = store_image(instance.image, upload.validated_data["image"])
+                stored = (instance.image.name, widths)
+                instance.image_widths = widths
+                instance.save(
+                    update_fields=["image", "image_widths"]
+                    + (["updated_at"] if hasattr(instance, "updated_at") else [])
+                )
+                audit.record(
+                    request.user,
+                    f"{self.label}.image_updated",
+                    instance,
+                    before=before,
+                    after=snapshot(instance),
+                    request=request,
+                )
+        except Exception:
+            if stored:  # the row never committed: don't leave its files behind
+                delete_image_files(*stored)
+            raise
+        delete_image_files(old_name, old_widths)  # the replaced picture and its variants
+        return Response(self.get_serializer(self.get_object()).data)
 
 
 # --------------------------------------------------------------------------------------------- permissions

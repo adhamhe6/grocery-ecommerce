@@ -70,7 +70,7 @@ class ImageSerializer(serializers.ModelSerializer):
         fields = ["id", "alt_text", "sort_order", "urls", "created_at"]
         read_only_fields = fields
 
-    def get_urls(self, obj):
+    def get_urls(self, obj) -> dict:
         return obj.urls()
 
 
@@ -84,7 +84,7 @@ class ClaimSerializer(serializers.ModelSerializer):
         extra_kwargs = {"verified": {"required": False}, "evidence": {"required": False, "allow_blank": True}}
         validators: list = []  # the (product, kind) uniqueness is checked on the whole list in the view
 
-    def get_verified_by(self, obj):
+    def get_verified_by(self, obj) -> str | None:
         return obj.verified_by.email if obj.verified_by_id else None
 
     def validate(self, attrs):
@@ -101,6 +101,11 @@ class ClaimSerializer(serializers.ModelSerializer):
 class AllergenInputSerializer(serializers.Serializer):
     allergen = serializers.SlugRelatedField(slug_field="code", queryset=Allergen.objects.all())
     level = serializers.ChoiceField(choices=AllergenLevel.choices, default=AllergenLevel.CONTAINS)
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and "allergen" not in data and "code" in data:  # accept {"code": "milk"} as well
+            data = {**data, "allergen": data["code"]}
+        return super().to_internal_value(data)
 
 
 class AllergensPutSerializer(serializers.Serializer):
@@ -186,10 +191,10 @@ class ProductSerializer(serializers.ModelSerializer):
         extra_kwargs = {"slug": {"required": False}, "sku": {"max_length": 32}}
 
     # -- derived (read-only) ----------------------------------------------------------------
-    def get_brand_name(self, obj):
+    def get_brand_name(self, obj) -> str | None:
         return obj.brand.name if obj.brand_id else None
 
-    def get_unit_price(self, obj):
+    def get_unit_price(self, obj) -> dict | None:
         up = obj.unit_price
         return {"amount": str(up["amount"]), "per": up["per"]} if up else None
 
@@ -304,13 +309,13 @@ class ProductDetailSerializer(ProductSerializer):
         fields = [*ProductSerializer.Meta.fields, "images", "claims", "allergens", "nutrition"]
         read_only_fields = [*ProductSerializer.Meta.read_only_fields, "images", "claims", "allergens", "nutrition"]
 
-    def get_allergens(self, obj):
+    def get_allergens(self, obj) -> list:
         return [
             {"allergen": row.allergen.code, "name": row.allergen.name, "level": row.level}
             for row in obj.allergens.select_related("allergen").order_by("allergen__name")
         ]
 
-    def get_nutrition(self, obj):
+    def get_nutrition(self, obj) -> dict | None:
         row = NutritionFact.objects.filter(product=obj).first()
         return NutritionSerializer(row).data if row else None
 
@@ -416,10 +421,14 @@ class ProductViewSet(AuditedViewSet):
         statuses = _csv_choices(self.request, "status", ProductStatus.values)
         if statuses:
             qs = qs.filter(status__in=statuses)
-        if p.get("category", "").isdigit():  # a department also shows the products of its categories
-            qs = qs.filter(Q(category_id=p["category"]) | Q(category__parent_id=p["category"]))
-        if p.get("brand", "").isdigit():
-            qs = qs.filter(brand_id=p["brand"])
+        if p.get("category"):  # by id or slug; a department also lists the products of its categories
+            ref = p["category"]
+            if ref.isdigit():
+                qs = qs.filter(Q(category_id=ref) | Q(category__parent_id=ref))
+            else:
+                qs = qs.filter(Q(category__slug=ref) | Q(category__parent__slug=ref))
+        if p.get("brand"):
+            qs = qs.filter(brand_id=p["brand"]) if p["brand"].isdigit() else qs.filter(brand__slug=p["brand"])
         for param, field in (
             ("perishable", "is_perishable"),
             ("featured", "is_featured"),

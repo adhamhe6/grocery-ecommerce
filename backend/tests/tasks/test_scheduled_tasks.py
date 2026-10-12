@@ -5,6 +5,7 @@ import pytest
 from django.db import transaction
 from django.utils import timezone
 
+from apps.catalog.models import Product
 from apps.catalog.tasks import refresh_popularity
 from apps.inventory import services as inv
 from apps.inventory.models import BatchStatus, StockLevel
@@ -75,13 +76,23 @@ def test_popularity_ignores_unpaid_and_cancelled_orders(shop_client, slot, milk)
     assert milk.popularity == 0
 
 
-def test_popularity_resets_when_nothing_sold_in_the_window(shop_client, slot, milk):
-    from apps.orders.models import Order
-
+def test_popularity_drops_to_zero_for_products_not_sold_when_others_were(
+    shop_client, slot, milk, product_factory, stock_up
+):
+    other = product_factory(sku="OTH", name="Other", price="1.00")
+    stock_up(other, 5)
+    Product.objects.filter(pk=other.pk).update(popularity=99)
     resp = place(shop_client, payload(slot))
     pay(shop_client, resp.json()["number"])
     refresh_popularity()
-    Order.objects.update(placed_at=timezone.now() - dt.timedelta(days=45))
-    refresh_popularity()
+    other.refresh_from_db()
     milk.refresh_from_db()
-    assert milk.popularity == 0
+    assert milk.popularity == 4
+    assert other.popularity == 0  # measured, not remembered
+
+
+def test_popularity_is_left_alone_when_there_are_no_sales_at_all(milk):
+    Product.objects.filter(pk=milk.pk).update(popularity=42)
+    assert refresh_popularity() == 0
+    milk.refresh_from_db()
+    assert milk.popularity == 42  # a fresh/demo store keeps its starting ranking

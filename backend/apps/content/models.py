@@ -8,7 +8,7 @@ from django.utils import timezone
 from apps.core.models import TimeStampedModel
 
 SAFE_LINK = RegexValidator(
-    r"^(/[A-Za-z0-9/_\-.?=&%#]*|https://[A-Za-z0-9.\-]+(/[A-Za-z0-9/_\-.?=&%#]*)?)$",
+    r"^(/(?!/)[A-Za-z0-9/_\-.?=&%#]*|https://[A-Za-z0-9.\-]+(/[A-Za-z0-9/_\-.?=&%#]*)?)$",
     "Use a site path starting with / or an https:// URL.",
 )
 

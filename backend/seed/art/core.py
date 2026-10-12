@@ -267,7 +267,17 @@ def label_layout(brand: str, name: str, w: float, name_size: float = 30):
     return bsize, lines, nsize, height
 
 
-def label_text(cx: float, cy: float, w: float, brand: str, name: str, fg: str, accent: str, name_size: float = 30, bg: str | None = None):
+def label_text(
+    cx: float,
+    cy: float,
+    w: float,
+    brand: str,
+    name: str,
+    fg: str,
+    accent: str,
+    name_size: float = 30,
+    bg: str | None = None,
+):
     """Tiny wordmark above a one/two-line pack name, vertically centred on (cx, cy) inside a label `w` px wide."""
     if bg:
         accent = readable(accent, bg)

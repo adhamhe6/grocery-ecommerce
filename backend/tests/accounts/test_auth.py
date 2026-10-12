@@ -214,3 +214,14 @@ def test_staff_flags_follow_role():
     manager = make_user(email="m@example.com", role="STORE_MANAGER")
     assert admin.is_staff and not manager.is_staff  # only technical roles reach Django admin
     assert "orders.fulfil" in manager.capabilities()
+
+
+def test_session_endpoint_is_200_for_visitors_and_members_and_sets_the_csrf_cookie(api, user):
+    visitor = api.get("/api/v1/auth/session/")
+    assert visitor.status_code == 200
+    assert visitor.json() == {"user": None}
+    assert "csrftoken" in visitor.cookies
+    api.post("/api/v1/auth/login/", {"email": user.email, "password": "Orchard-Row-9!x"}, format="json")
+    member = api.get("/api/v1/auth/session/").json()["user"]
+    assert member["email"] == user.email
+    assert "password" not in member

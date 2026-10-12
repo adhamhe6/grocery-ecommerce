@@ -179,7 +179,8 @@ PANTRY = [
         "Granulated Sugar",
         "2.29",
         short="White granulated sugar in a 1 kg bag.",
-        desc="Fine white granulated sugar in a 1 kg paper bag, for baking, hot drinks and preserving.",
+        desc="Fine white granulated sugar in a 1 kg paper bag. Use it for baking, hot drinks and preserving. "
+        "Store in a cool, dry place.",
         art=("bag", dict(kind="paper", c="#DCE8F2", glyph_name="star", name="Granulated Sugar", accent="#3E6FB0")),
         alt="Illustration of a pale blue paper sugar bag with a star symbol",
         brand=BP,
@@ -232,7 +233,8 @@ PANTRY = [
         "Sunflower Oil",
         "4.49",
         short="Sunflower oil in a 1 L bottle.",
-        desc="A neutral-tasting cooking oil in a 1 L bottle, suitable for frying, roasting and baking.",
+        desc="A neutral-tasting cooking oil in a 1 L bottle. It is suitable for frying, roasting and baking. "
+        "Store in a cool, dark place.",
         art=(
             "bottle",
             dict(

@@ -7,7 +7,6 @@ import math
 from .core import (
     arrange,
     body,
-    circle,
     contact,
     darken,
     ell,
@@ -47,7 +46,9 @@ def slice_unit(crust: str, crumb: str, seeds: bool = False) -> str:
     out += pth(inner)(f'fill="{crumb}"')
     for k in range(26):
         a = k * 2.399963
-        out += ell(math.cos(a) * 44 * ((k * 0.7) % 1), -8 + math.sin(a) * 66 * ((k * 0.43) % 1), 3.2, 2.2)(f'fill="{darken(crumb, 0.22)}" opacity=".45"')
+        out += ell(math.cos(a) * 44 * ((k * 0.7) % 1), -8 + math.sin(a) * 66 * ((k * 0.43) % 1), 3.2, 2.2)(
+            f'fill="{darken(crumb, 0.22)}" opacity=".45"'
+        )
     if seeds:
         out += _seeds(0, -10, 44, 62, 18, darken(crumb, 0.35), 4)
     return out
@@ -100,7 +101,12 @@ def loaf(kind="batard", crust=CRUST, crumb=CRUMB, seeds=False, sliced=True, n=1,
 
 
 def bun_unit(c: str, seeds: bool, glaze: bool, i: int, bottom: bool = False) -> str:
-    out = body(pth("M-100,38 C-104,-30 -64,-72 0,-72 C64,-72 104,-30 100,38 C98,60 60,66 0,66 C-60,66 -98,60 -100,38 Z"), tone(c, ((i * 3) % 4 - 1.5) * 0.02), depth=14, shade=0.26)
+    out = body(
+        pth("M-100,38 C-104,-30 -64,-72 0,-72 C64,-72 104,-30 100,38 C98,60 60,66 0,66 C-60,66 -98,60 -100,38 Z"),
+        tone(c, ((i * 3) % 4 - 1.5) * 0.02),
+        depth=14,
+        shade=0.26,
+    )
     out += stroke_path("M-96,40 C-50,52 50,52 96,40", 4, darken(c, 0.3), 0.35)
     if seeds:
         out += _seeds(0, -28, 62, 28, 22, "#F7EAC4", 5.5)
@@ -122,6 +128,7 @@ def pastry(kind="croissant", c="#D99A4A", n=1, **_) -> str:
         # crescent silhouette: thick centre, horns curling down, with curved ridges across the body
         steps = 40
         top, bot, mid = [], [], []
+
         def center(t):
             return -210 + 420 * t, 70 - 90 * math.sin(math.pi * t) ** 0.9
 
@@ -144,7 +151,12 @@ def pastry(kind="croissant", c="#D99A4A", n=1, **_) -> str:
         for k in range(3, steps - 2, 5):
             cx_, cy_, nx, ny, wid = mid[k]
             x1, y1, x2, y2 = cx_ - nx * wid * 0.5, cy_ - ny * wid * 0.5, cx_ + nx * wid * 0.5, cy_ + ny * wid * 0.5
-            out += stroke_path(f"M{x1:.0f},{y1:.0f} Q{(x1 + x2) / 2 + 14:.0f},{(y1 + y2) / 2 - 6:.0f} {x2:.0f},{y2:.0f}", 5, darken(c, 0.4), 0.42)
+            out += stroke_path(
+                f"M{x1:.0f},{y1:.0f} Q{(x1 + x2) / 2 + 14:.0f},{(y1 + y2) / 2 - 6:.0f} {x2:.0f},{y2:.0f}",
+                5,
+                darken(c, 0.4),
+                0.42,
+            )
         for k in range(6, steps - 5, 5):
             cx_, cy_, nx, ny, wid = mid[k]
             out += ell(cx_ - nx * wid * 0.22, cy_ - ny * wid * 0.22, 14, 5, -20)('fill="#fff" opacity=".28"')
@@ -158,6 +170,7 @@ def pastry(kind="croissant", c="#D99A4A", n=1, **_) -> str:
         out += body(ell(184, 4, 18, 52), "#4A2A1A", depth=4, shade=0.3)
         out += shine(-100, -56, 70, 9, -6, 0.32)
         return out
+
     # cinnamon roll(s)
     def roll(i):
         out = body(ell(0, 22, 108, 74), tone(c, ((i * 3) % 4 - 1.5) * 0.02), depth=14, shade=0.28)
@@ -200,7 +213,7 @@ def cake(kind="whole", sponge="#F0D79A", frosting="#FFFFFF", accent="#E56B8C", t
         for k in range(8):
             x = -150 + k * 44
             out += body(rrect(x, -50, 30, 22 + (k * 13) % 34, 14), frosting, depth=3, shade=0.14)
-        for k, x in enumerate((-80, 70)):
+        for x in (-80, 70):
             out += body(ell(x, -100, 40, 14), "#F0D04A", depth=4, shade=0.22) + ell(x, -100, 26, 7)('fill="#FBEA8C"')
         out += shine(-130, -70, 40, 7, -4, 0.45)
         return out

@@ -47,7 +47,9 @@ def label_panel(cx, cy, w, h, bg, brand, name, fg, accent, glyph_name=None, name
     out = rrect(cx - w / 2, cy - h / 2, w, h, r)(f'fill="{bg}"')
     top = cy - h / 2
     if stripe:
-        out += rrect(cx - w / 2, top, w, 18, r)(f'fill="{stripe}"') + rrect(cx - w / 2, top + 9, w, 9, 0)(f'fill="{stripe}"')
+        out += rrect(cx - w / 2, top, w, 18, r)(f'fill="{stripe}"') + rrect(cx - w / 2, top + 9, w, 9, 0)(
+            f'fill="{stripe}"'
+        )
         top += 18
     inner_w = w - 16
     _, _, _, th = label_layout(brand or "", name or "", inner_w, name_size)
@@ -122,13 +124,10 @@ def tin_unit(c="#B8532F", band="#FBF7EF", brand="", name="", glyph_name=None, sh
     out = ""
     out += body(rrect(-w / 2, y0, w, h, 6), c, depth=14, shade=0.26)
     out += ell(0, h / 2, w / 2, 22)(f'fill="{darken(c, 0.3)}"')
-    # label band
-    bh = h * 0.7 if not short else h * 0.64
-    out += rrect(-w / 2, -bh / 2, w, bh, 2)(f'fill="{band}"')
-    out += rrect(-w / 2 + 14, -bh / 2 - 0, 12, bh, 4)('fill="#fff" opacity=".25"')
-    out += label_text(0, 4 if not glyph_name else 20, w - 24, brand, name, _fg(band), accent, 30 if not short else 26, bg=band)
-    if glyph_name:
-        out += glyph(glyph_name, 0, -bh / 2 + 36, 46, accent)
+    # label band (wraps the whole tin) laid out with the shared label helper
+    bh = h * 0.72 if not short else h * 0.7
+    out += label_panel(0, 2, w, bh, band, brand, name, _fg(band), accent, glyph_name, 30 if not short else 26, r=2)
+    out += rrect(-w / 2 + 14, -bh / 2 + 2, 12, bh - 2, 4)('fill="#fff" opacity=".25"')
     # rim and top
     out += rrect(-w / 2 - 4, y0 - 4, w + 8, 14, 5)(f'fill="{METAL}"') + rrect(-w / 2 - 4, h / 2 - 8, w + 8, 14, 5)(
         f'fill="{METAL}"'
@@ -145,6 +144,12 @@ def tin(c="#B8532F", band="#FBF7EF", brand="", name="", glyph_name=None, count=1
         return tin_unit(c, band, brand, name, glyph_name, short, accent)
     h = 150 if short else 240
     scale = 150 / (h + 26)
+    if count == 3:  # a row of three, no overlap (labels stay readable)
+        out = ""
+        for i, x in enumerate((-215, 0, 215)):
+            out += contact(x, 140, 100, 12, 0.2)
+            out += place(tin_unit(tone(c, (i - 1) * 0.03), band, brand, name, glyph_name, short, accent), x, 0, 1.0)
+        return out
     return arrange(
         count,
         lambda i: place(
@@ -254,7 +259,6 @@ def bag(
         return out
     # pillow bag with crimped top and bottom
     w, h = 300, 340
-    zig = ""
     top = [(-w / 2, -h / 2)]
     for k in range(0, 21):
         top.append((-w / 2 + k * w / 20, -h / 2 + (14 if k % 2 else 0)))
@@ -317,7 +321,11 @@ def box(
         out += f'<clipPath id="{cid}">{rrect(-w / 2, -h / 2, w, h, 8)("")}</clipPath><g clip-path="url(#{cid})">'
         for k in range(10):
             a = math.radians(-90 + (k - 4.5) * 14)
-            pts = [(0, -20), (math.cos(a - 0.09) * 190, -20 + math.sin(a - 0.09) * 190), (math.cos(a + 0.09) * 190, -20 + math.sin(a + 0.09) * 190)]
+            pts = [
+                (0, -20),
+                (math.cos(a - 0.09) * 190, -20 + math.sin(a - 0.09) * 190),
+                (math.cos(a + 0.09) * 190, -20 + math.sin(a + 0.09) * 190),
+            ]
             out += poly(pts)(f'fill="{lighten(c, 0.18)}" opacity=".55"')
         out += "</g>"
         out += f'<path d="M-62,-6 L62,-6 C58,50 30,70 0,70 C-30,70 -58,50 -62,-6 Z" fill="{CREAM}"/>'
@@ -331,7 +339,9 @@ def box(
         )
         return out
     if kind == "tea":
-        out += label_panel(0, 6, w - 44, h - 60, label or CREAM, brand, name, INK, accent, glyph_name, 30, stripe=c, r=10)
+        out += label_panel(
+            0, 6, w - 44, h - 60, label or CREAM, brand, name, INK, accent, glyph_name, 30, stripe=c, r=10
+        )
         return out
     if kind == "pasta":
         out += label_panel(0, -h / 2 + 78, w - 24, 118, label or CREAM, brand, name, INK, accent, glyph_name, 26, r=8)
@@ -494,7 +504,7 @@ def pot_unit(
     d = "M-130,-64 L130,-64 L104,126 Q102,140 88,140 L-88,140 Q-102,140 -104,126 Z"
     out = body(pth(d), c, depth=12, shade=0.14)
     out += rrect(-118, 20, 236, 102, 0)(f'fill="{band}"')
-    out += label_text(0, 72, 214, brand, name, on_band, readable(lighten(band, 0.7), band), 34)
+    out += label_text(0, 72, 214, brand, name, on_band, on_band, 34)
     out += body(rrect(-140, -96, 280, 40, 12), lid, depth=5, shade=0.25)
     out += line(-124, -86, 124, -86, 4, lighten(lid, 0.5), op=0.5)
     out += rrect(-96, -50, 12, 160, 6)('fill="#fff" opacity=".3"')

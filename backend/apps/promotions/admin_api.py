@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -71,7 +71,12 @@ def promotion_warnings(promo: Promotion) -> list[str]:
         targets = Product.objects.filter(Q(category_id__in=ids) | Q(category__parent_id__in=ids))
     else:
         targets = Product.objects.filter(brand__in=promo.brands.all())
-    targets = targets.filter(status=ProductStatus.ACTIVE).select_related("category").distinct().order_by("id")[:WARNING_PRODUCT_SCAN_LIMIT]
+    targets = (
+        targets.filter(status=ProductStatus.ACTIVE)
+        .select_related("category")
+        .distinct()
+        .order_by("id")[:WARNING_PRODUCT_SCAN_LIMIT]
+    )
     products = list(targets)
     if not products:
         warnings.append("No active products are covered by this promotion right now.")
@@ -83,11 +88,26 @@ def promotion_warnings(promo: Promotion) -> list[str]:
     )  # fmt: skip
     useless = []
     for product in products:
-        qty = Decimal(promo.multibuy_qty) if promo.kind == PromotionKind.MULTIBUY and promo.multibuy_qty else product.qty_min
+        qty = (
+            Decimal(promo.multibuy_qty)
+            if promo.kind == PromotionKind.MULTIBUY and promo.multibuy_qty
+            else product.qty_min
+        )
         if apply_promo(definition, product.price, qty) is None:
             useless.append(product)
+    if promo.kind == PromotionKind.AMOUNT_OFF and promo.amount_off is not None:
+        free = [p for p in products if 0 < p.price <= promo.amount_off]
+        if free:
+            names = ", ".join(f"{p.name} ({money(p.price)})" for p in free[:5]) + (
+                f" and {len(free) - 5} more" if len(free) > 5 else ""
+            )
+            warnings.append(
+                f"{money(promo.amount_off)} off is at least the shelf price, so these products become free: {names}."
+            )
     if useless:
-        names = ", ".join(f"{p.name} ({money(p.price)})" for p in useless[:5]) + (f" and {len(useless) - 5} more" if len(useless) > 5 else "")
+        names = ", ".join(f"{p.name} ({money(p.price)})" for p in useless[:5]) + (
+            f" and {len(useless) - 5} more" if len(useless) > 5 else ""
+        )
         if promo.kind == PromotionKind.MULTIBUY:
             detail = f"{promo.multibuy_qty} for {money(promo.multibuy_price)} is not cheaper than buying them at the shelf price"
         elif promo.kind == PromotionKind.AMOUNT_OFF:
@@ -242,7 +262,9 @@ class PromotionViewSet(AuditedViewSet):
 class CouponSerializer(serializers.ModelSerializer):
     code = serializers.CharField(max_length=40)
     value = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=Decimal("0"))
-    max_discount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=Decimal("0"))
+    max_discount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=Decimal("0")
+    )
     min_order_value = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=Decimal("0"))
     categories = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), many=True, required=False)
     products = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), many=True, required=False)
@@ -262,7 +284,10 @@ class CouponSerializer(serializers.ModelSerializer):
         validators: list = []
 
     def get_is_redeemed(self, obj) -> bool:
-        return obj.used_count > 0 or obj.redemptions.exists()
+        if obj.used_count > 0:
+            return True
+        known = getattr(obj, "has_redemptions", None)  # annotated on list / detail querysets (no per-row query)
+        return known if known is not None else obj.redemptions.exists()
 
     def validate_code(self, value):
         code = value.strip().upper()
@@ -312,14 +337,20 @@ class CouponSerializer(serializers.ModelSerializer):
                 errors[field] = f"Choose at least one {SCOPE_NOUN[field]} for a {scope} coupon."
 
         products = attrs["products"] if "products" in attrs else (list(inst.products.all()) if inst is not None else [])
-        excluded = attrs["excluded_products"] if "excluded_products" in attrs else (list(inst.excluded_products.all()) if inst is not None else [])
+        excluded = (
+            attrs["excluded_products"]
+            if "excluded_products" in attrs
+            else (list(inst.excluded_products.all()) if inst is not None else [])
+        )
         overlap = {p.pk for p in products} & {p.pk for p in excluded}
         if scope == CouponScope.PRODUCTS and overlap:
             errors["excluded_products"] = "A product can't be both included and excluded."
 
         limit = current("usage_limit")
         if limit is not None and inst is not None and limit < inst.used_count:
-            errors["usage_limit"] = f"This coupon has already been used {inst.used_count} time(s); the limit can't be set below that."
+            errors["usage_limit"] = (
+                f"This coupon has already been used {inst.used_count} time(s); the limit can't be set below that."
+            )
         starts, ends = current("starts_at"), current("ends_at")
         if starts and ends and ends <= starts:
             errors["ends_at"] = "The end must be after the start."
@@ -327,14 +358,21 @@ class CouponSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
         return attrs
 
+    @staticmethod
+    def _drop_stale_cap(validated: dict, current_kind) -> None:
+        if (validated.get("kind") or current_kind) != CouponKind.PERCENT:
+            validated["max_discount"] = None  # a cap only exists for percentage coupons
+
     def create(self, validated):
         relations = {f: validated.pop(f) for f in ("categories", "products", "excluded_products") if f in validated}
+        self._drop_stale_cap(validated, None)
         coupon = Coupon.objects.create(**validated)
         self._set_relations(coupon, relations)
         return coupon
 
     def update(self, instance, validated):
         relations = {f: validated.pop(f) for f in ("categories", "products", "excluded_products") if f in validated}
+        self._drop_stale_cap(validated, instance.kind)
         for key, value in validated.items():
             setattr(instance, key, value)
         instance.save()
@@ -352,7 +390,9 @@ class CouponSerializer(serializers.ModelSerializer):
 
 
 class CouponViewSet(AuditedViewSet):
-    queryset = Coupon.objects.prefetch_related("categories", "products", "excluded_products").order_by("-created_at", "-id")
+    queryset = Coupon.objects.prefetch_related("categories", "products", "excluded_products").order_by(
+        "-created_at", "-id"
+    )
     serializer_class = CouponSerializer
     pagination_class = StandardPagination
     capability = read_capability = "promotions.manage"
@@ -362,7 +402,11 @@ class CouponViewSet(AuditedViewSet):
     audit_m2m = ("categories", "products", "excluded_products")
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = (
+            super()
+            .get_queryset()
+            .annotate(has_redemptions=Exists(CouponRedemption.objects.filter(coupon=OuterRef("pk"))))
+        )
         p = self.request.query_params
         for name in ("kind", "scope"):
             if p.get(name):
@@ -386,7 +430,10 @@ class CouponViewSet(AuditedViewSet):
     def stats(self, request, pk=None):
         coupon = self.get_object()
         rows = CouponRedemption.objects.filter(coupon=coupon)
-        per_status = {r["status"]: r for r in rows.values("status").annotate(n=Count("id"), total=Coalesce(Sum("amount"), Decimal("0")))}
+        per_status = {
+            r["status"]: r
+            for r in rows.values("status").annotate(n=Count("id"), total=Coalesce(Sum("amount"), Decimal("0")))
+        }
 
         def bucket(name):
             row = per_status.get(name)

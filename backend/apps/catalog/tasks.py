@@ -20,6 +20,15 @@ def refresh_popularity() -> int:
     from .models import Product
 
     since = timezone.now() - dt.timedelta(days=POPULARITY_WINDOW_DAYS)
+    anything_sold = (
+        OrderItem.objects.filter(order__placed_at__gte=since, substitute_for__isnull=True)
+        .exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED, OrderStatus.PENDING_PAYMENT])
+        .exists()
+    )
+    if not anything_sold:
+        # No sales data at all (a brand-new or demo store): keep the existing ranking rather than flattening it to zero.
+        logger.info("popularity_unchanged_no_recent_sales")
+        return 0
     counted = OrderItem.objects.filter(
         product=OuterRef("pk"), order__placed_at__gte=since, substitute_for__isnull=True
     ).exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED, OrderStatus.PENDING_PAYMENT])

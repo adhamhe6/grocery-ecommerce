@@ -34,7 +34,7 @@ x-backend: &backend
     EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
     EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
     DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Orchard Row <orders@example.invalid>}
-    TIME_ZONE: ${TIME_ZONE:-UTC}
+    TIME_ZONE: ${TIME_ZONE:-America/New_York}
     LOG_LEVEL: ${LOG_LEVEL:-INFO}
   volumes:
     - media:/data/media
@@ -123,7 +123,8 @@ services:
     <<: *backend
     profiles: ["tools"]
     restart: "no"
-    command: ["python", "manage.py", "seed_demo", "--yes-i-know-this-is-demo-data"]
+    # --force: DEBUG is off in the production image. This loads DEMO data and DEMO accounts; never run it against real data.
+    command: ["python", "manage.py", "seed_demo", "--force"]
     depends_on:
       migrate: { condition: service_completed_successfully }
 

@@ -16,6 +16,7 @@ import datetime as dt
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Model
 from rest_framework import filters, viewsets
 from rest_framework.permissions import IsAuthenticated
@@ -77,43 +78,47 @@ class AdminViewSet(viewsets.ModelViewSet):
         if branch is not None:
             ensure_branch_access(self.request.user, getattr(branch, "pk", branch))
 
+    # Each write and its audit entry commit together or not at all: there is never a change without a record of it.
     def perform_create(self, serializer):
         self.check_write_scope(serializer.validated_data)
-        instance = serializer.save()
-        audit.record(
-            self.request.user,
-            f"{self.label}.created",
-            instance,
-            after=snapshot(instance, self.audit_exclude),
-            request=self.request,
-        )
+        with transaction.atomic():
+            instance = serializer.save()
+            audit.record(
+                self.request.user,
+                f"{self.label}.created",
+                instance,
+                after=snapshot(instance, self.audit_exclude),
+                request=self.request,
+            )
 
     def perform_update(self, serializer):
         self.check_write_scope(serializer.validated_data)
-        before = snapshot(serializer.instance, self.audit_exclude)
-        instance = serializer.save()
-        audit.record(
-            self.request.user,
-            f"{self.label}.updated",
-            instance,
-            before=before,
-            after=snapshot(instance, self.audit_exclude),
-            request=self.request,
-        )
+        with transaction.atomic():
+            before = snapshot(serializer.instance, self.audit_exclude)
+            instance = serializer.save()
+            audit.record(
+                self.request.user,
+                f"{self.label}.updated",
+                instance,
+                before=before,
+                after=snapshot(instance, self.audit_exclude),
+                request=self.request,
+            )
 
     def perform_destroy(self, instance):
-        before = snapshot(instance, self.audit_exclude)
-        target_id = str(instance.pk)
-        instance.delete()
-        audit.record(
-            self.request.user,
-            f"{self.label}.deleted",
-            None,
-            before=before,
-            request=self.request,
-            target_type=self.queryset.model.__name__,
-            target_id=target_id,
-        )
+        with transaction.atomic():
+            before = snapshot(instance, self.audit_exclude)
+            target_id = str(instance.pk)
+            instance.delete()
+            audit.record(
+                self.request.user,
+                f"{self.label}.deleted",
+                None,
+                before=before,
+                request=self.request,
+                target_type=self.queryset.model.__name__,
+                target_id=target_id,
+            )
 
 
 def accessible_branch_ids(user) -> list[int] | None:

@@ -76,7 +76,7 @@ MEAT_FISH_FROZEN = [
         "Cod Fillets",
         "24.99",
         short="Skinless cod fillets, priced per kg.",
-        desc="White, flaky cod fillets without skin, packed on a tray. Bake, steam or coat and fry. Check for "
+        desc="White, flaky cod fillets without skin, packed on a tray. Bake, steam or coat and fry, and check for "
         "stray bones. Contains fish. " + BY_WEIGHT,
         art=("fish", dict(kind="cod", c="#EFE4CE")),
         alt="Illustration of a pale cod fillet with a lemon wedge on a white tray",

@@ -63,6 +63,19 @@ class CsrfView(APIView):
         return Response({"csrfToken": get_token(request)})
 
 
+class SessionView(APIView):
+    """Who am I? Always 200: `{"user": null}` for a visitor, so the storefront can ask on every page load without
+    producing a failing request (and a console error) for the vast majority of visitors. Also sets the CSRF cookie."""
+
+    permission_classes = [AllowAny]
+
+    @method_decorator(ensure_csrf_cookie)
+    @extend_schema(responses={200: dict})
+    def get(self, request):
+        user = request.user if request.user.is_authenticated else None
+        return Response({"user": UserSerializer(user).data if user else None})
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]

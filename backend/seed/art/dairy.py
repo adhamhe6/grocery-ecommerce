@@ -39,7 +39,15 @@ def egg_carton(c="#F3E9D8", count=12, **_) -> str:
     # tray lip / front wall
     out += body(rrect(-w / 2, h / 2 - 34, w, 52, 18), tone(PULP, -0.04), depth=6, shade=0.22)
     for k in range(cols - 1):
-        out += line(-w / 2 + 18 + (k + 1) * cw, h / 2 - 28, -w / 2 + 18 + (k + 1) * cw, h / 2 + 10, 4, darken(PULP, 0.25), op=0.5)
+        out += line(
+            -w / 2 + 18 + (k + 1) * cw,
+            h / 2 - 28,
+            -w / 2 + 18 + (k + 1) * cw,
+            h / 2 + 10,
+            4,
+            darken(PULP, 0.25),
+            op=0.5,
+        )
     eggs = []
     for r in range(2):
         for k in range(cols):
@@ -60,8 +68,17 @@ def butter(c="#F2D468", wrapper="#F6F0E4", band="#3E6FB0", brand="", name="", **
     # the wrapper covers the right 65% of the block
     wx = -w / 2 + w * 0.34
     ww = w * 0.66
-    out += poly([(wx, -h / 2), (wx + d * 0.62, -h / 2 - d * 0.42), (wx + ww + d * 0.62, -h / 2 - d * 0.42), (wx + ww, -h / 2)])(f'fill="{lighten(wrapper, 0.1)}"')
-    out += poly([(wx + ww, -h / 2), (wx + ww + d * 0.62, -h / 2 - d * 0.42), (wx + ww + d * 0.62, h / 2 - d * 0.42), (wx + ww, h / 2)])(f'fill="{darken(wrapper, 0.12)}"')
+    out += poly(
+        [(wx, -h / 2), (wx + d * 0.62, -h / 2 - d * 0.42), (wx + ww + d * 0.62, -h / 2 - d * 0.42), (wx + ww, -h / 2)]
+    )(f'fill="{lighten(wrapper, 0.1)}"')
+    out += poly(
+        [
+            (wx + ww, -h / 2),
+            (wx + ww + d * 0.62, -h / 2 - d * 0.42),
+            (wx + ww + d * 0.62, h / 2 - d * 0.42),
+            (wx + ww, h / 2),
+        ]
+    )(f'fill="{darken(wrapper, 0.12)}"')
     out += rrect(wx, -h / 2, ww, h, 4)(f'fill="{wrapper}"')
     out += rrect(wx, -h / 2 + 8, ww, 22, 0)(f'fill="{band}"')
     out += label_text(wx + ww / 2, 22, ww - 20, brand, name, INK, readable(band, wrapper), 26)
@@ -76,7 +93,9 @@ def cheese(kind="block", c="#F0A93A", rind="#FBF8EE", **_) -> str:
     if kind == "balls":
         out = ""
         for k, (x, y, s) in enumerate([(-100, 20, 1.0), (90, 40, 0.94), (-6, -30, 1.04)]):
-            u = body(circle_shape(0, 0, 100), tone(rind, ((k * 3) % 4 - 1.5) * 0.015), depth=15, shade=0.18) + shine(-44, -44, 22, 34, -30, 0.55)
+            u = body(circle_shape(0, 0, 100), tone(rind, ((k * 3) % 4 - 1.5) * 0.015), depth=15, shade=0.18) + shine(
+                -44, -44, 22, 34, -30, 0.55
+            )
             u += ell(0, -96, 22, 8)('fill="#F2EBD8" opacity=".8"')
             out += contact(x, y + 98 * s, 90 * s, 12) + place(u, x, y, s)
         out += place(_basil(), 6, -118, 0.9, -10) + place(_basil(), -150, -64, 0.7, -30)
@@ -84,12 +103,19 @@ def cheese(kind="block", c="#F0A93A", rind="#FBF8EE", **_) -> str:
     if kind == "wedge":
         # brie-style wheel with a wedge taken out: white rind outside, pale paste where it was cut
         cy_, rx, ry, h = -20, 190, 72, 76
-        out = body(pth(f"M{-rx},{cy_} L{-rx},{cy_ + h} A{rx},{ry} 0 0 0 {rx},{cy_ + h} L{rx},{cy_} Z"), rind, depth=8, shade=0.14)
+        out = body(
+            pth(f"M{-rx},{cy_} L{-rx},{cy_ + h} A{rx},{ry} 0 0 0 {rx},{cy_ + h} L{rx},{cy_} Z"),
+            rind,
+            depth=8,
+            shade=0.14,
+        )
         out += body(ell(0, cy_, rx, ry), rind, depth=6, shade=0.08)
         out += ell(0, cy_, rx - 14, ry - 8)(f'fill="none" stroke="{darken(rind, 0.08)}" stroke-width="3" opacity=".6"')
         p1 = (rx * math.cos(math.radians(18)), cy_ + ry * math.sin(math.radians(18)))
         p2 = (rx * math.cos(math.radians(74)), cy_ + ry * math.sin(math.radians(74)))
-        out += pth(f"M{p1[0]:.1f},{p1[1]:.1f} L{p1[0]:.1f},{p1[1] + h:.1f} A{rx},{ry} 0 0 1 {p2[0]:.1f},{p2[1] + h:.1f} L{p2[0]:.1f},{p2[1]:.1f} A{rx},{ry} 0 0 0 {p1[0]:.1f},{p1[1]:.1f} Z")('fill="#E6CB68"')
+        out += pth(
+            f"M{p1[0]:.1f},{p1[1]:.1f} L{p1[0]:.1f},{p1[1] + h:.1f} A{rx},{ry} 0 0 1 {p2[0]:.1f},{p2[1] + h:.1f} L{p2[0]:.1f},{p2[1]:.1f} A{rx},{ry} 0 0 0 {p1[0]:.1f},{p1[1]:.1f} Z"
+        )('fill="#E6CB68"')
         out += pth(f"M0,{cy_} L{p2[0]:.1f},{p2[1]:.1f} L{p2[0]:.1f},{p2[1] + h:.1f} L0,{cy_ + h} Z")('fill="#D9BC55"')
         out += pth(f"M0,{cy_} L{p1[0]:.1f},{p1[1]:.1f} A{rx},{ry} 0 0 1 {p2[0]:.1f},{p2[1]:.1f} Z")('fill="#F8EAA6"')
         out += stroke_path(f"M0,{cy_} L{p1[0]:.1f},{p1[1]:.1f}", 3, "#FFF6C8", 0.7)

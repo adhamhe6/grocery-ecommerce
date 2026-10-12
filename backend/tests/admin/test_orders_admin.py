@@ -332,3 +332,20 @@ class TestListsQueueAndDetail:
         )
         assert over.status_code == 409 and over.json()["error"]["code"] == "REFUND_NOT_ALLOWED"
         assert StockLevel.objects.filter(product=milk).exists()
+
+    def test_retry_of_a_full_refund_returns_the_same_refund_instead_of_an_error(self, manager, picker, order):
+        """Regression: after a full refund the payment is REFUNDED, so a retry with the same key used to fail with
+        REFUND_NOT_ALLOWED ('nothing left to refund') rather than returning the refund it had already made."""
+        from tests.shop import run_to_completion
+
+        run_to_completion(order, picker.user)
+        total = manager.get(f"{BASE}{order.number}/").json()["totals"]["final_total"]
+        body = {"amount": total, "reason": "full goodwill refund", "idempotency_key": "full-refund-key-1"}
+        first = manager.post(f"{BASE}{order.number}/refund/", body, format="json")
+        rid = first.json()["refund_result"]["id"]
+        manager.post(f"{BASE}{order.number}/refunds/{rid}/complete/", {"reference": "RCPT-1"}, format="json")
+        assert Payment.objects.get().state == "REFUNDED"
+        retry = manager.post(f"{BASE}{order.number}/refund/", body, format="json")
+        assert retry.status_code == 200, retry.content
+        assert retry.json()["refund_result"]["id"] == rid
+        assert len(retry.json()["refunds"]) == 1

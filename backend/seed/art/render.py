@@ -92,10 +92,18 @@ class Renderer:
             page.evaluate(SHOW_JS)
             if box:
                 k = 0.6 * self.scale
-                bx0, by0, bx1, by1 = ((box[0] - 450 * self.scale) / k, (box[1] - 450 * self.scale) / k, (box[2] - 450 * self.scale) / k, (box[3] - 450 * self.scale) / k)
+                bx0, by0, bx1, by1 = (
+                    (box[0] - 450 * self.scale) / k,
+                    (box[1] - 450 * self.scale) / k,
+                    (box[2] - 450 * self.scale) / k,
+                    (box[3] - 450 * self.scale) / k,
+                )
                 bw, bh = bx1 - bx0, by1 - by0
                 s = min(min(tw / bw, th / bh) * size, maxs)
                 cx = (bx0 + bx1) / 2
+                gy = min(
+                    gy, 470 + bh * s / 2
+                )  # low, wide items rise toward the middle instead of sitting at the bottom
                 page.evaluate(APPLY_JS, [f"translate({gx} {gy}) scale({s}) translate({-cx} {-by1})", gx, gy, bw * s])
         img = Image.open(io.BytesIO(page.screenshot())).convert("RGB")
         if not cutout:

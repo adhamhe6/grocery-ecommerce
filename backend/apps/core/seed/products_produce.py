@@ -309,8 +309,8 @@ PRODUCE = [
         "Limes",
         "0.59",
         short="Green limes, sold by the piece.",
-        desc="Small green limes sold individually, used for juice and zest in drinks, marinades and Mexican and "
-        "Thai-style dishes.",
+        desc="Small green limes sold individually. Their juice and zest are used in drinks, marinades and Mexican "
+        "and Thai-style dishes. Store them in the fridge to keep them longer.",
         art=("citrus", dict(kind="lime", n=2)),
         alt="Illustration of two whole limes and a halved lime",
         diet="plain",
