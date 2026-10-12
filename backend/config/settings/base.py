@@ -249,7 +249,11 @@ EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", False)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "Orchard Row <hello@example.invalid>")
 
 # ---------------------------------------------------------------- business config
-FRONTEND_URL = env("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = env("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+# Browsers talk to the storefront origin, which proxies /api to this service, so unsafe requests arrive with
+# `Origin: <storefront>` but a different Host. Trust that origin for CSRF unless the operator lists origins explicitly.
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [FRONTEND_URL]
 STORE_CURRENCY = env("STORE_CURRENCY", "USD")
 RESERVATION_TTL_MINUTES = env_int("RESERVATION_TTL_MINUTES", 15)
 

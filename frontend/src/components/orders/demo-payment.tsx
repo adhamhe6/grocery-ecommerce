@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,17 @@ interface DemoPaymentInfo { order_number: string; amount: string; currency: stri
  */
 export function DemoPayment({ reference }: { reference: string }) {
   const router = useRouter();
+  const qc = useQueryClient();
   const token = useSearchParams().get("token");
   const money = useMoney();
   const info = useQuery({ queryKey: ["demo-payment", reference], queryFn: () => apiGet<DemoPaymentInfo>(`/payments/demo/${reference}/`), retry: false });
   const choose = useMutation({
     mutationFn: (outcome: "succeed" | "fail" | "cancel") => api<{ order_number: string; outcome: string }>(`/payments/demo/${reference}/`, { method: "POST", body: { outcome } }),
-    onSuccess: (r) => router.push(`/orders/${r.order_number}?${r.outcome === "succeed" ? "placed=1&" : ""}${token ? `token=${encodeURIComponent(token)}` : ""}`),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["order", r.order_number] });
+      qc.invalidateQueries({ queryKey: ["cart"] });
+      router.push(`/orders/${r.order_number}?${r.outcome === "succeed" ? "placed=1&" : ""}${token ? `token=${encodeURIComponent(token)}` : ""}`);
+    },
   });
   if (info.isLoading) return <Skeleton className="mx-auto h-72 max-w-lg" />;
   if (info.error) return <ErrorState title={info.error instanceof ApiError && info.error.status === 404 ? "This payment page isn't available" : "We couldn't load the payment"} error={info.error} />;

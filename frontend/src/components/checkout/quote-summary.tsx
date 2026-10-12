@@ -37,7 +37,7 @@ export function QuoteSummary({ cart, quote, loading, quoteError, ready, fulfilme
         </div>
       )}
       {!ready && !q && <p className="mt-4 text-sm text-ink-3">Delivery fee and the final total appear once you&apos;ve entered your details and chosen a slot.</p>}
-      {quoteError ? <Alert tone="bad" title="We couldn't price this order" className="mt-4">{quoteError instanceof ApiError ? quoteError.message : "Please try again."}</Alert> : null}
+      {quoteError && !(quoteError instanceof ApiError && quoteError.code === "MIN_ORDER_NOT_MET") ? <Alert tone="bad" title="We couldn't price this order" className="mt-4">{quoteError instanceof ApiError ? quoteError.message : "Please try again."}</Alert> : null}
     </section>
   );
 }

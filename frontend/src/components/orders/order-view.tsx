@@ -22,6 +22,9 @@ function useOrder(number: string, token: string | null) {
   return useQuery({
     queryKey: ["order", number, token],
     queryFn: () => apiGet<OrderDetail>(`/orders/${number}/`, token ? { token } : undefined),
+    // An order moves under the shopper (payment events, picking), so never trust a cached copy on arrival.
+    staleTime: 0,
+    refetchOnMount: "always",
     refetchInterval: (q) => (q.state.data?.is_terminal ? false : 15_000),
     retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2,
   });

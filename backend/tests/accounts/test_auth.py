@@ -225,3 +225,19 @@ def test_session_endpoint_is_200_for_visitors_and_members_and_sets_the_csrf_cook
     member = api.get("/api/v1/auth/session/").json()["user"]
     assert member["email"] == user.email
     assert "password" not in member
+
+
+def test_csrf_trusts_the_storefront_origin_that_proxies_the_api_and_nothing_else(csrf_api, user, settings):
+    """Browsers post from the storefront origin to a proxied API whose Host differs. That origin must be accepted
+    (regression: every write was a 403 behind the proxy) while a foreign origin carrying a valid token is refused."""
+    assert settings.FRONTEND_URL in settings.CSRF_TRUSTED_ORIGINS
+    token = csrf_api.get("/api/v1/auth/csrf/", secure=True).json()["csrfToken"]
+    body = {"email": user.email, "password": PASSWORD}
+    foreign = csrf_api.post(
+        "/api/v1/auth/login/", body, HTTP_X_CSRFTOKEN=token, HTTP_ORIGIN="https://evil.example", secure=True
+    )
+    assert foreign.status_code == 403
+    ok = csrf_api.post(
+        "/api/v1/auth/login/", body, HTTP_X_CSRFTOKEN=token, HTTP_ORIGIN=settings.FRONTEND_URL, secure=True
+    )
+    assert ok.status_code == 200

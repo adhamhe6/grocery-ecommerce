@@ -10,7 +10,7 @@ import { Alert, EmptyState, ErrorState, Skeleton } from "@/components/ui/states"
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Checkbox, ChoiceGroup, Field, Input, Textarea, describedBy } from "@/components/ui/field";
 import { ApiError, api, apiGet, newIdempotencyKey } from "@/lib/api";
-import { useCart, useCartActions, useMe, useStore } from "@/lib/hooks";
+import { useCart, useCartActions, useMe, useMoney, useStore } from "@/lib/hooks";
 import type { Address, Branch, OrderDetail, QuoteData, SlotsResponse, SubstitutionPolicy } from "@/lib/types";
 import { SlotPicker } from "./slot-picker";
 import { QuoteSummary } from "./quote-summary";
@@ -38,6 +38,7 @@ export function CheckoutView() {
   const router = useRouter();
   const qc = useQueryClient();
   const store = useStore();
+  const money = useMoney();
   const { data: me, isLoading: meLoading } = useMe();
   const { data: cart, isLoading: cartLoading, error: cartError, refetch } = useCart();
   const { fix } = useCartActions();
@@ -111,7 +112,12 @@ export function CheckoutView() {
     return base;
   }, [fulfilment, slotId, payment, effectivePolicy, note, me, contact, branchId, saved, addr, saveAddress]);
 
-  const ready = slotId != null && (fulfilment === "PICKUP" ? branchId != null : addressComplete) && contactComplete && !!cart?.can_checkout;
+  // Known before the shopper presses anything: the zone's minimum order versus what is in the basket.
+  const zoneMin = fulfilment === "DELIVERY" ? Number(slots.data?.zone?.min_order_value ?? 0) : 0;
+  const shortfall = cart ? Math.max(0, Math.round((Math.max(zoneMin, Number(store.policies.min_order_value)) - Number(cart.totals.subtotal)) * 100) / 100) : 0;
+  const belowMinimum = shortfall > 0;
+
+  const ready = !belowMinimum && slotId != null && (fulfilment === "PICKUP" ? branchId != null : addressComplete) && contactComplete && !!cart?.can_checkout;
   const quotePayload = useDebounced(payload, 350);
   const quote = useQuery({
     queryKey: ["quote", quotePayload, cart?.totals.subtotal],
@@ -162,6 +168,7 @@ export function CheckoutView() {
   if (!me && !store.allow_guest_checkout) return <EmptyState title="Please sign in to check out" action={<ButtonLink href="/login?next=/checkout">Sign in</ButtonLink>}>Guest checkout isn&apos;t available at the moment.</EmptyState>;
 
   const fe = formError?.fieldErrors ?? {};
+  const minDetails = formError?.code === "MIN_ORDER_NOT_MET" ? (formError.details as { minimum?: string; shortfall?: string }) : null;
   const cartChangedItems = formError?.code === "CART_CHANGED" ? ((formError.details as any)?.items as { name: string; message: string }[] | undefined) : undefined;
   const totalChanged = formError?.code === "CART_CHANGED" && !!(formError.details as any)?.quote;
   const cardLabel = store.payment.mode === "demo" ? "Card (demonstration sandbox)" : "Credit or debit card";
@@ -271,9 +278,15 @@ export function CheckoutView() {
 
       <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start" aria-label="Order summary">
         <QuoteSummary cart={cart} quote={liveQuote} loading={ready && quote.isFetching && !changedQuote} quoteError={ready ? quote.error : null} ready={ready} fulfilment={fulfilment} />
-        {formError && !totalChanged && (
+        {belowMinimum && (
+          <Alert tone="warn" title="Add a little more to order">
+            The minimum order for {fulfilment === "DELIVERY" ? "this delivery area" : "this store"} is <strong className="num">{money(Math.max(zoneMin, Number(store.policies.min_order_value)))}</strong>. Add <strong className="num">{money(shortfall)}</strong> more to continue.
+            <p className="mt-1"><Link href="/shop" className="font-semibold underline">Keep shopping</Link></p>
+          </Alert>
+        )}
+        {formError && !totalChanged && !belowMinimum && (
           <Alert tone="bad" title={formError.code === "CART_CHANGED" ? "Your basket changed" : "We couldn't place your order"}>
-            {formError.message}
+            {minDetails?.minimum && minDetails.shortfall ? `The minimum order for this delivery area is ${money(minDetails.minimum)}. Add ${money(minDetails.shortfall)} more to continue.` : formError.message}
             {cartChangedItems && <ul className="mt-1 list-disc pl-4">{cartChangedItems.map((i) => <li key={i.name}><strong>{i.name}:</strong> {i.message}</li>)}</ul>}
             {formError.code === "CART_CHANGED" && <p className="mt-2"><Link href="/cart" className="font-semibold underline">Review your basket</Link></p>}
             {formError.requestId && <p className="mt-1 text-xs text-ink-3">Reference: {formError.requestId}</p>}
@@ -283,7 +296,7 @@ export function CheckoutView() {
         <Button type="submit" size="lg" className="w-full" loading={place.isPending} disabled={!ready || place.isPending || (!store.payment.card_enabled && !store.payment.cod_enabled)}>
           {payment === "CARD" ? <><CreditCard className="size-5" aria-hidden /> Place order &amp; pay</> : <><Landmark className="size-5" aria-hidden /> Place order</>}
         </Button>
-        {!ready && <p className="text-center text-sm text-ink-3" role="status">{!contactComplete ? "Enter your details" : slotId == null ? "Choose a slot" : "Complete the sections above"} to place your order.</p>}
+        {!ready && !belowMinimum && <p className="text-center text-sm text-ink-3" role="status">{!contactComplete ? "Enter your details" : slotId == null ? "Choose a slot" : "Complete the sections above"} to place your order.</p>}
         <p className="text-center text-xs text-ink-3">By placing your order you agree to our <Link className="underline" href="/p/terms">terms</Link> and <Link className="underline" href="/p/substitutions">substitution &amp; weight policy</Link>.</p>
         <p className="sr-only" aria-live="polite">{place.isPending ? "Placing your order" : ""}</p>
         
