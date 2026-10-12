@@ -11,11 +11,11 @@ from apps.inventory.models import MovementKind, StockLevel, StockMovement
 from apps.notifications.models import Notification
 from apps.orders import fulfilment as ful
 from apps.orders import workflow
-from apps.orders.models import Order, OrderItem, Substitution
-from apps.payments.models import Payment, Refund
+from apps.orders.models import Order, Substitution
 from apps.payments import services as pay_services
+from apps.payments.models import Payment, Refund
 from tests.conftest import make_user
-from tests.orders.conftest import payload, place, pay
+from tests.orders.conftest import pay, payload, place
 
 pytestmark = pytest.mark.django_db
 D = Decimal

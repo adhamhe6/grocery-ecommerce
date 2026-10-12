@@ -119,21 +119,35 @@ def rolls(c="#D79A55", n=6, seeds=False, glaze=False, **_) -> str:
 
 def pastry(kind="croissant", c="#D99A4A", n=1, **_) -> str:
     if kind == "croissant":
-        # a plump centre with two tapering horns curling downwards, built from ridged segments
-        out = ""
-        total = 11
-        order = sorted(range(total), key=lambda k: -abs(k - (total - 1) / 2))
-        for k in order:
-            t = k / (total - 1)
-            a = math.radians(196 + 148 * t)
-            x, y = math.cos(a) * 170, 96 + math.sin(a) * 118
-            bulge = math.sin(math.pi * t) ** 0.8
-            w_, h_ = 22 + 34 * bulge, 40 + 62 * bulge
-            ang = math.degrees(a) + 90
-            seg = body(ell(0, 0, w_, h_), tone(c, 0.05 * math.sin(k * 1.3)), depth=8, shade=0.3)
-            seg += stroke_path(f"M{-w_ * 0.75:.0f},{-h_ * 0.55:.0f} C{-w_ * 0.2:.0f},{-h_ * 0.25:.0f} {w_ * 0.2:.0f},{-h_ * 0.25:.0f} {w_ * 0.75:.0f},{-h_ * 0.55:.0f}", 4, darken(c, 0.38), 0.4)
-            seg += shine(-w_ * 0.35, -h_ * 0.4, w_ * 0.3, h_ * 0.12, -20, 0.3)
-            out += place(seg, x, y, 1, ang)
+        # crescent silhouette: thick centre, horns curling down, with curved ridges across the body
+        steps = 40
+        top, bot, mid = [], [], []
+        def center(t):
+            return -210 + 420 * t, 70 - 90 * math.sin(math.pi * t) ** 0.9
+
+        for k in range(steps + 1):
+            t = k / steps
+            cx_, cy_ = center(t)
+            ax, ay = center(min(1.0, t + 0.01))
+            bx_, by_ = center(max(0.0, t - 0.01))
+            dx, dy = ax - bx_, ay - by_
+            ln = math.hypot(dx, dy) or 1
+            nx, ny = -dy / ln, dx / ln
+            wid = 12 + 150 * math.sin(math.pi * t) ** 0.7
+            top.append((cx_ - nx * wid / 2, cy_ - ny * wid / 2))
+            bot.append((cx_ + nx * wid / 2, cy_ + ny * wid / 2))
+            mid.append((cx_, cy_, nx, ny, wid))
+        from .core import smooth_closed
+
+        outline = top + bot[::-1]
+        out = body(pth(smooth_closed(outline[::2])), c, depth=10, shade=0.3)
+        for k in range(3, steps - 2, 5):
+            cx_, cy_, nx, ny, wid = mid[k]
+            x1, y1, x2, y2 = cx_ - nx * wid * 0.5, cy_ - ny * wid * 0.5, cx_ + nx * wid * 0.5, cy_ + ny * wid * 0.5
+            out += stroke_path(f"M{x1:.0f},{y1:.0f} Q{(x1 + x2) / 2 + 14:.0f},{(y1 + y2) / 2 - 6:.0f} {x2:.0f},{y2:.0f}", 5, darken(c, 0.4), 0.42)
+        for k in range(6, steps - 5, 5):
+            cx_, cy_, nx, ny, wid = mid[k]
+            out += ell(cx_ - nx * wid * 0.22, cy_ - ny * wid * 0.22, 14, 5, -20)('fill="#fff" opacity=".28"')
         return out
     if kind == "pain_choc":
         d = "M-170,10 C-170,-60 -110,-84 -40,-84 L80,-84 C150,-84 190,-50 190,10 C190,60 150,90 80,90 L-40,90 C-110,90 -170,70 -170,10 Z"

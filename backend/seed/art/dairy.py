@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from .core import (
     CREAM,
     INK,
@@ -80,19 +82,21 @@ def cheese(kind="block", c="#F0A93A", rind="#FBF8EE", **_) -> str:
         out += place(_basil(), 6, -118, 0.9, -10) + place(_basil(), -150, -64, 0.7, -30)
         return out
     if kind == "wedge":
-        # brie-style wedge: pale paste on the cut faces, white bloomy rind on the curved edge
-        tip, a, b = (-190, 20), (150, -80), (196, 50)
-        thick = 84
-        front = [tip, b, (b[0], b[1] + thick), (tip[0], tip[1] + thick)]
-        out = body(poly(front), "#EBD27A", depth=9, shade=0.22)
-        out += poly([a, b, (b[0], b[1] + thick), (a[0], a[1] + thick)])(f'fill="{darken(rind, 0.06)}"')
-        out += stroke_path(f"M{a[0] + 14},{a[1] + 10} L{b[0] + 14},{b[1] + 10}", 6, "#fff", 0.5)
-        out += body(poly([tip, a, b]), "#F7E9A8", depth=6, shade=0.12)
-        out += stroke_path(f"M{a[0]},{a[1]} L{b[0]},{b[1]}", 10, rind)
-        out += stroke_path(f"M{tip[0]},{tip[1]} L{b[0]},{b[1]}", 4, "#FFF6C8", 0.7)
-        for k in range(7):
-            out += circle(-120 + k * 38, 52 + (k % 2) * 8, 3.6, darken("#EBD27A", 0.2), 0.4)
-        return place(out, 0, -10)
+        # brie-style wheel with a wedge taken out: white rind outside, pale paste where it was cut
+        cy_, rx, ry, h = -20, 190, 72, 76
+        out = body(pth(f"M{-rx},{cy_} L{-rx},{cy_ + h} A{rx},{ry} 0 0 0 {rx},{cy_ + h} L{rx},{cy_} Z"), rind, depth=8, shade=0.14)
+        out += body(ell(0, cy_, rx, ry), rind, depth=6, shade=0.08)
+        out += ell(0, cy_, rx - 14, ry - 8)(f'fill="none" stroke="{darken(rind, 0.08)}" stroke-width="3" opacity=".6"')
+        p1 = (rx * math.cos(math.radians(18)), cy_ + ry * math.sin(math.radians(18)))
+        p2 = (rx * math.cos(math.radians(74)), cy_ + ry * math.sin(math.radians(74)))
+        out += pth(f"M{p1[0]:.1f},{p1[1]:.1f} L{p1[0]:.1f},{p1[1] + h:.1f} A{rx},{ry} 0 0 1 {p2[0]:.1f},{p2[1] + h:.1f} L{p2[0]:.1f},{p2[1]:.1f} A{rx},{ry} 0 0 0 {p1[0]:.1f},{p1[1]:.1f} Z")('fill="#E6CB68"')
+        out += pth(f"M0,{cy_} L{p2[0]:.1f},{p2[1]:.1f} L{p2[0]:.1f},{p2[1] + h:.1f} L0,{cy_ + h} Z")('fill="#D9BC55"')
+        out += pth(f"M0,{cy_} L{p1[0]:.1f},{p1[1]:.1f} A{rx},{ry} 0 0 1 {p2[0]:.1f},{p2[1]:.1f} Z")('fill="#F8EAA6"')
+        out += stroke_path(f"M0,{cy_} L{p1[0]:.1f},{p1[1]:.1f}", 3, "#FFF6C8", 0.7)
+        for k in range(5):
+            out += circle(p2[0] + 18 + k * 22, p2[1] + 36 + (k % 2) * 8, 3.2, darken("#E6CB68", 0.25), 0.4)
+        out += shine(-100, cy_ - 24, 60, 9, -8, 0.5)
+        return place(out, 0, 0)
     # cheddar-style block with a slice cut off the front
     w, h, d = 280, 130, 130
     out = cuboid(-w / 2, -h / 2, w, h, d, c, top=lighten(c, 0.3), side=darken(c, 0.22), r=6)

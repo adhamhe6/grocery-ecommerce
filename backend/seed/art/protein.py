@@ -123,26 +123,27 @@ def fish(kind="salmon", c="#F0875B", **_) -> str:
 
 
 def shrimp(c="#F29C7A") -> str:
-    out = tray(470, 56)
-    units = [(-130, -58, -8, 1.0), (50, -50, 10, 1.05), (-30, -128, 4, 0.95), (170, -26, -18, 0.85)]
+    out = tray(480, 56)
+    units = [(-170, -52, -6, 0.9), (20, -50, 8, 0.95), (200, -44, -12, 0.85)]
     for k, (x, y, r, s) in enumerate(units):
         seg = ""
-        total = 7
+        total = 17
+        end = 200
         for j in range(total):
             t = j / (total - 1)
-            a = math.radians(30 + 250 * t)
-            px, py = math.cos(a) * 62, math.sin(a) * 62
-            size = 30 - 12 * t
-            seg += body(ell(px, py, size, size * 0.8, math.degrees(a) + 90), tone(c, 0.04 * math.sin(j * 1.4)), depth=5, shade=0.26)
-            seg += stroke_path(f"M{px - size * 0.8:.1f},{py:.1f} L{px + size * 0.8:.1f},{py:.1f}", 3, darken(c, 0.3), 0.3)
-        tail = math.radians(30 + 250)
-        tx, ty = math.cos(tail) * 62, math.sin(tail) * 62
-        for ang in (170, 205, 240):
-            seg += place(leaf(36, 18, tone(c, -0.05), vein=False, depth=3), tx, ty, 1, ang)
-        hx, hy = math.cos(math.radians(30)) * 62, math.sin(math.radians(30)) * 62
-        seg += stroke_path(f"M{hx + 20:.0f},{hy - 8:.0f} q26,-18 44,-4", 3, darken(c, 0.2), 0.7)
-        seg += circle(hx + 6, hy - 6, 4, "#2B1A10")
-        out += place(seg, x, y, s * 1.35, r)
+            a = math.radians(-20 + end * t)
+            px, py = math.cos(a) * 66, math.sin(a) * 66
+            size = 36 - 17 * t
+            seg += body(ell(px, py, size, size * 0.62, math.degrees(a) + 90), tone(c, 0.04 * math.sin(j * 1.4)), depth=5, shade=0.26)
+            seg += stroke_path(f"M{px - size * 0.75:.1f},{py:.1f} L{px + size * 0.75:.1f},{py:.1f}", 3, darken(c, 0.3), 0.3)
+        tail = math.radians(-20 + end)
+        tx, ty = math.cos(tail) * 66, math.sin(tail) * 66
+        for ang in (80, 120, 160):
+            seg += place(leaf(34, 18, tone(c, -0.05), vein=False, depth=3), tx, ty, 1, ang)
+        hx, hy = math.cos(math.radians(-20)) * 66, math.sin(math.radians(-20)) * 66
+        seg += stroke_path(f"M{hx + 22:.0f},{hy - 10:.0f} q24,-20 46,-2", 3, darken(c, 0.2), 0.7)
+        seg += circle(hx + 8, hy - 8, 4, "#2B1A10")
+        out += place(seg, x, y + 44, s * 1.3, r)
     return place(out + _film(500, 200, -170), 0, 24)
 
 
