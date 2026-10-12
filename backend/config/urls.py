@@ -10,11 +10,14 @@ from apps.core import views as core_views
 urlpatterns = [
     path("healthz", core_views.healthz),
     path("readyz", core_views.readyz),
-    path("django-admin/", admin.site.urls),
     path("api/v1/", include("config.api_urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]
+if settings.DJANGO_ADMIN_ENABLED:
+    # Break-glass tool for super admins. The staff dashboard is the supported interface, so this stays off in production
+    # unless an operator turns it on deliberately (and ideally restricts the path at the reverse proxy).
+    urlpatterns += [path("django-admin/", admin.site.urls)]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 elif settings.SERVE_MEDIA:

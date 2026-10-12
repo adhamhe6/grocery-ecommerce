@@ -1,5 +1,5 @@
 Django==5.2.*
-djangorestframework==3.16.*
+djangorestframework==3.17.*
 drf-spectacular==0.28.*
 django-filter==25.*
 psycopg[binary]==3.2.*
@@ -8,6 +8,6 @@ redis==5.2.*
 celery==5.5.*
 gunicorn==23.*
 whitenoise==6.9.*
-Pillow==11.*
+Pillow==12.*
 argon2-cffi==23.*
 stripe==12.*

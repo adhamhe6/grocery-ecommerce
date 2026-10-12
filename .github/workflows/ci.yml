@@ -47,6 +47,8 @@ jobs:
         env:
           DJANGO_SECRET_KEY: ci-only-not-a-secret-ci-only-not-a-secret-000000
           DJANGO_ALLOWED_HOSTS: localhost
+      - name: Dependency vulnerabilities (production requirements)
+        run: pip install pip-audit && pip-audit -r requirements/base.txt
       - name: Tests
         run: python -m pytest -q --cov=apps --cov-report=term-missing:skip-covered --cov-report=xml
       - uses: actions/upload-artifact@v4
@@ -63,6 +65,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
       - run: npm ci
+      - name: Dependency vulnerabilities (production dependencies, high and above)
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
@@ -89,7 +93,8 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/0
       DJANGO_SETTINGS_MODULE: config.settings.dev
       CELERY_ALWAYS_EAGER: "true"
-      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      TIME_ZONE: America/New_York
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
