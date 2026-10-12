@@ -28,6 +28,7 @@ from .core import (
     place,
     poly,
     pth,
+    readable,
     rrect,
     shine,
     stroke_path,
@@ -40,17 +41,28 @@ METAL = "#C9CFD2"
 
 
 def label_panel(cx, cy, w, h, bg, brand, name, fg, accent, glyph_name=None, name_size=30, stripe=None, r=14) -> str:
+    from .core import label_layout
+
+    accent = readable(accent, bg)
     out = rrect(cx - w / 2, cy - h / 2, w, h, r)(f'fill="{bg}"')
+    top = cy - h / 2
     if stripe:
-        out += rrect(cx - w / 2, cy - h / 2, w, 16, r)(f'fill="{stripe}"') + rrect(cx - w / 2, cy - h / 2 + 8, w, 8, 0)(
-            f'fill="{stripe}"'
-        )
-    ty = cy
+        out += rrect(cx - w / 2, top, w, 18, r)(f'fill="{stripe}"') + rrect(cx - w / 2, top + 9, w, 9, 0)(f'fill="{stripe}"')
+        top += 18
+    inner_w = w - 16
+    _, _, _, th = label_layout(brand or "", name or "", inner_w, name_size)
+    avail = h - (top - (cy - h / 2)) - 14
+    gs = 0.0
     if glyph_name:
-        gs = min(h * 0.34, 54)
-        out += glyph(glyph_name, cx, cy - h / 2 + gs * 0.78 + (14 if stripe else 6), gs, accent)
-        ty = cy + gs * 0.42
-    out += label_text(cx, ty, w - 16, brand or "", name or "", fg, accent, name_size)
+        gs = max(0.0, min(avail - th - 6, h * 0.36, 60))
+        if gs < 22:
+            gs = 0.0
+    block = gs + (6 if gs else 0) + th
+    y = top + (h - (top - (cy - h / 2)) - block) / 2
+    if gs:
+        out += glyph(glyph_name, cx, y + gs / 2, gs, accent)
+        y += gs + 6
+    out += label_text(cx, y + th / 2, inner_w, brand or "", name or "", fg, accent, name_size)
     return out
 
 
@@ -87,7 +99,7 @@ def jar(
     top = -h / 2 + 34 + (h - 34) * (1 - fill)
     cid = f"jc{abs(hash((content, shape, name))) % 100000}"
     out += f'<clipPath id="{cid}">{glass("")}</clipPath><g clip-path="url(#{cid})">'
-    out += body(rrect(-w / 2, top, w, h, 0), content, depth=14, shade=0.22) + "</g>"
+    out += body(rrect(-w / 2, top, w, h / 2 - top + 4, 0), content, depth=14, shade=0.22) + "</g>"
     out += rrect(-w / 2 + 14, -h / 2 + 50, 12, h - 90, 6)('fill="#fff" opacity=".28"')
     # shoulders / neck ring and lid
     nw = w * 0.8
@@ -96,10 +108,8 @@ def jar(
         out += line(k * nw / 8, -h / 2 - 2, k * nw / 8, -h / 2 + 30, 3, darken(lid, 0.3), op=0.35)
     out += line(-nw / 2 + 8, -h / 2, nw / 2 - 8, -h / 2, 4, lighten(lid, 0.5), op=0.5)
     # label
-    lw, lh = w * 0.86, h * 0.5
-    out += label_panel(
-        0, h * 0.06, lw, lh, label, brand, name, _fg(label), accent, glyph_name, 26 if shape != "tall" else 24, r=12
-    )
+    lw, lh = w * 0.9, h * 0.6
+    out += label_panel(0, h * 0.08, lw, lh, label, brand, name, _fg(label), accent, glyph_name, 30, r=12)
     return out
 
 
@@ -113,11 +123,10 @@ def tin_unit(c="#B8532F", band="#FBF7EF", brand="", name="", glyph_name=None, sh
     out += body(rrect(-w / 2, y0, w, h, 6), c, depth=14, shade=0.26)
     out += ell(0, h / 2, w / 2, 22)(f'fill="{darken(c, 0.3)}"')
     # label band
-    out = out  # label drawn after body so it stays inside the curved ends
     bh = h * 0.7 if not short else h * 0.64
     out += rrect(-w / 2, -bh / 2, w, bh, 2)(f'fill="{band}"')
     out += rrect(-w / 2 + 14, -bh / 2 - 0, 12, bh, 4)('fill="#fff" opacity=".25"')
-    out += label_text(0, 4 if not glyph_name else 18, w - 24, brand, name, _fg(band), accent, 28 if not short else 24)
+    out += label_text(0, 4 if not glyph_name else 20, w - 24, brand, name, _fg(band), accent, 30 if not short else 26, bg=band)
     if glyph_name:
         out += glyph(glyph_name, 0, -bh / 2 + 36, 46, accent)
     # rim and top
@@ -135,7 +144,7 @@ def tin(c="#B8532F", band="#FBF7EF", brand="", name="", glyph_name=None, count=1
     if count == 1:
         return tin_unit(c, band, brand, name, glyph_name, short, accent)
     h = 150 if short else 240
-    scale = 190 / (h + 26)
+    scale = 150 / (h + 26)
     return arrange(
         count,
         lambda i: place(
@@ -302,18 +311,15 @@ def box(
     accent = accent or darken(c, 0.2)
     out = cuboid(-w / 2, -h / 2, w, h, d, c, r=8)
     fg = _fg(c)
-    lab = label or c
     if kind == "cereal":
         # sun-burst behind a bowl pictogram, wordmark and name on top
+        cid = f"cb{abs(hash((c, name))) % 100000}"
+        out += f'<clipPath id="{cid}">{rrect(-w / 2, -h / 2, w, h, 8)("")}</clipPath><g clip-path="url(#{cid})">'
         for k in range(10):
             a = math.radians(-90 + (k - 4.5) * 14)
-            out += poly(
-                [
-                    (0, -20),
-                    (math.cos(a - 0.09) * 190, -20 + math.sin(a - 0.09) * 190),
-                    (math.cos(a + 0.09) * 190, -20 + math.sin(a + 0.09) * 190),
-                ]
-            )(f'fill="{lighten(c, 0.18)}" opacity=".55"')
+            pts = [(0, -20), (math.cos(a - 0.09) * 190, -20 + math.sin(a - 0.09) * 190), (math.cos(a + 0.09) * 190, -20 + math.sin(a + 0.09) * 190)]
+            out += poly(pts)(f'fill="{lighten(c, 0.18)}" opacity=".55"')
+        out += "</g>"
         out += f'<path d="M-62,-6 L62,-6 C58,50 30,70 0,70 C-30,70 -58,50 -62,-6 Z" fill="{CREAM}"/>'
         out += ell(0, -6, 62, 14)(f'fill="{lighten(accent, 0.55)}"')
         out += "".join(
@@ -325,21 +331,10 @@ def box(
         )
         return out
     if kind == "tea":
-        out += label_panel(0, 6, w - 44, h - 70, lab, brand, name, _fg(lab), accent, glyph_name, 28, r=10)
-        out += stroke_path(
-            f"M{w / 2 - 36},{-h / 2 + 4} C{w / 2 - 36},{-h / 2 - 40} {w / 2 - 56},{-h / 2 - 50} {w / 2 - 66},{-h / 2 - 64}",
-            4,
-            INK,
-            0.7,
-        )
-        out += (
-            rrect(w / 2 - 82, -h / 2 - 90, 34, 28, 4)(f'fill="{CREAM}" stroke="{INK}" stroke-width="2"')
-            if False
-            else ""
-        )
+        out += label_panel(0, 6, w - 44, h - 60, label or CREAM, brand, name, INK, accent, glyph_name, 30, stripe=c, r=10)
         return out
     if kind == "pasta":
-        out += label_panel(0, -h / 2 + 76, w - 24, 112, lab, brand, name, _fg(lab), accent, glyph_name, 24, r=8)
+        out += label_panel(0, -h / 2 + 78, w - 24, 118, label or CREAM, brand, name, INK, accent, glyph_name, 26, r=8)
         wy = h / 2 - 96
         out += rrect(-w / 2 + 20, wy - 52, w - 40, 128, 10)(
             f'fill="#F6EFE0" stroke="{lighten(c, 0.5)}" stroke-width="4"'
@@ -348,9 +343,9 @@ def box(
             out += _pasta_window(-w / 2 + 28, wy - 44, w - 56, 112, window, grains)
         return out
     if kind == "cracker":
-        out += label_panel(0, 0, w - 50, h - 50, lab, brand, name, _fg(lab), accent, glyph_name, 30, r=10)
+        out += label_panel(0, 0, w - 60, h - 50, label or CREAM, brand, name, INK, accent, glyph_name, 32, r=10)
         return out
-    out += label_panel(0, 0, w - 40, h - 36, lab, brand, name, _fg(lab), accent, glyph_name, 28, r=10)
+    out += label_panel(0, 0, w - 40, h - 36, label or CREAM, brand, name, INK, accent, glyph_name, 30, r=10)
     return out
 
 
@@ -400,19 +395,19 @@ def bottle(
         cid = f"bc{abs(hash((liquid, name, kind))) % 100000}"
         out += (
             f'<clipPath id="{cid}">{pth(d)("")}</clipPath><g clip-path="url(#{cid})">'
-            + body(rrect(-100, -140, 200, 400, 0), liquid, depth=14, shade=0.25)
+            + body(rrect(-100, -140, 200, 360, 0), liquid, depth=14, shade=0.25)
             + "</g>"
         )
         out += body(rrect(-34, -226, 68, 44, 8), cap, depth=5, shade=0.3)
         out += rrect(-70, -80, 12, 200, 6)('fill="#fff" opacity=".3"')
-        out += label_panel(0, 62, 150, 170, label, brand, name, _fg(label), accent, glyph_name, 24, r=10)
+        out += label_panel(0, 70, 160, 190, label, brand, name, _fg(label), accent, glyph_name, 30, r=10)
         return out
     if kind == "round":
         d = "M-96,-4 C-96,-70 -40,-86 -30,-120 L-30,-150 L30,-150 L30,-120 C40,-86 96,-70 96,-4 L96,160 C96,184 76,196 54,196 L-54,196 C-76,196 -96,184 -96,160 Z"
         out += body(pth(d), liquid, depth=14, shade=0.3)
         out += body(rrect(-36, -178, 72, 40, 8), cap, depth=5, shade=0.3)
         out += rrect(-80, -60, 12, 200, 6)('fill="#fff" opacity=".22"')
-        out += label_panel(0, 56, 168, 164, label, brand, name, _fg(label), accent, glyph_name, 26, r=10)
+        out += label_panel(0, 60, 176, 176, label, brand, name, _fg(label), accent, glyph_name, 30, r=10)
         return out
     if kind == "water":
         d = (
@@ -427,8 +422,8 @@ def bottle(
                 f"M-72,{-90 + k * 14} C-30,{-84 + k * 14} 30,{-84 + k * 14} 72,{-90 + k * 14}", 3, "#fff", 0.35
             )
         out += rrect(-58, -10, 116, 140, 8)(f'fill="{label}"') + rrect(-58, -10, 116, 18, 8)(f'fill="{accent}"')
-        out += label_text(0, 70, 104, brand, name, _fg(label), accent, 22)
-        out += glyph(glyph_name or "drop", 0, 30, 30, accent) if glyph_name != "none" else ""
+        out += label_text(0, 82, 108, brand, name, _fg(label), accent, 26)
+        out += glyph(glyph_name or "drop", 0, 26, 30, accent) if glyph_name != "none" else ""
         out += rrect(-62, 20, 10, 150, 5)('fill="#fff" opacity=".35"')
         return out
     # juice / squat bottle
@@ -436,7 +431,7 @@ def bottle(
     out += body(pth(d), liquid, depth=14, shade=0.26)
     out += body(rrect(-44, -166, 88, 44, 8), cap, depth=5, shade=0.3)
     out += rrect(-84, -40, 12, 190, 6)('fill="#fff" opacity=".28"')
-    out += label_panel(0, 64, 176, 164, label, brand, name, _fg(label), accent, glyph_name, 26, r=10)
+    out += label_panel(0, 66, 184, 176, label, brand, name, _fg(label), accent, glyph_name, 30, r=10)
     return out
 
 
@@ -486,37 +481,25 @@ def pot_unit(
     c="#FBF7EF", lid="#6E8FD0", band="#6E8FD0", brand="", name="", glyph_name=None, accent=None, size="tub"
 ) -> str:
     accent = accent or band
+    on_band = CREAM if not _on_light(band) else INK
     if size == "cup":
         d = "M-80,-60 L80,-60 L64,110 Q62,122 50,122 L-50,122 Q-62,122 -64,110 Z"
         out = body(pth(d), c, depth=10, shade=0.16)
         out += body(rrect(-88, -92, 176, 36, 10), METAL, depth=4, shade=0.2)
-        out += rrect(-60, 8, 120, 70, 0)(f'fill="{band}"') if False else ""
         out += rrect(-72, -10, 144, 86, 0)(f'fill="{band}" opacity=".95"')
-        out += glyph(glyph_name, 0, 16, 36, CREAM) if glyph_name else ""
-        out += label_text(0, 50, 118, "", name, CREAM if not _on_light(band) else INK, accent, 20)
+        out += glyph(glyph_name, 0, -34, 40, band) if glyph_name else ""
+        out += label_text(0, 34, 128, "", name, on_band, accent, 26)
         out += rrect(-58, -40, 10, 140, 5)('fill="#fff" opacity=".3"')
         return out
     d = "M-130,-64 L130,-64 L104,126 Q102,140 88,140 L-88,140 Q-102,140 -104,126 Z"
     out = body(pth(d), c, depth=12, shade=0.14)
-    out += rrect(-72, -10, 1, 1, 0)("") if False else ""
-    out += rrect(-118, 4, 236, 118, 0)(f'fill="{band}"')
-    out += label_text(
-        0,
-        62,
-        190,
-        brand,
-        name,
-        CREAM if not _on_light(band) else INK,
-        lighten(band, 0.6) if not _on_light(band) else darken(band, 0.4),
-        30,
-    )
-    if glyph_name:
-        out += glyph(glyph_name, 0, 4, 44, CREAM) if False else ""
+    out += rrect(-118, 20, 236, 102, 0)(f'fill="{band}"')
+    out += label_text(0, 72, 214, brand, name, on_band, readable(lighten(band, 0.7), band), 34)
     out += body(rrect(-140, -96, 280, 40, 12), lid, depth=5, shade=0.25)
     out += line(-124, -86, 124, -86, 4, lighten(lid, 0.5), op=0.5)
     out += rrect(-96, -50, 12, 160, 6)('fill="#fff" opacity=".3"')
     if glyph_name:
-        out += glyph(glyph_name, -92, 30, 40, "#fff")
+        out += glyph(glyph_name, 0, -14, 60, band)
     return out
 
 
@@ -533,12 +516,12 @@ def pot(
     **_,
 ) -> str:
     if size == "multi":
-        return arrange(
-            count,
-            lambda i: place(
-                pot_unit(c, lid, tone(band, ((i % 2) * 0.1)), brand, name, glyph_name, accent, "cup"), 0, 0, 0.8
-            ),
-        )
+        out = ""
+        slots = [(-92, -70), (92, -70), (-92, 70), (92, 70)][: max(2, min(count, 4))]
+        for i, (x, y) in enumerate(slots):
+            unit = pot_unit(c, lid, tone(band, (i % 2) * 0.08), brand, name, glyph_name, accent, "cup")
+            out += contact(x, y + 88, 70, 10, 0.2) + place(unit, x, y, 0.82)
+        return out
     return pot_unit(c, lid, band, brand, name, glyph_name, accent, size)
 
 

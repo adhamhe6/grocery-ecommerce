@@ -217,8 +217,8 @@ def text_width(s: str, size: float, kind: str = "sans") -> float:
     return len(s) * size * (0.62 if kind == "sans" else 0.55)
 
 
-def fit_size(s: str, max_w: float, size: float, kind: str = "sans", min_size: float = 12) -> float:
-    w = text_width(s, size, kind)
+def fit_size(s: str, max_w: float, size: float, kind: str = "sans", min_size: float = 12, ls: float = 0) -> float:
+    w = text_width(s, size, kind) + ls * len(s) * size / 16
     return size if w <= max_w else max(min_size, size * max_w / w)
 
 
@@ -247,21 +247,43 @@ def txt(x, y, s: str, size: float, fill: str, kind: str = "sans", weight: int = 
     )
 
 
-def label_text(cx: float, cy: float, w: float, brand: str, name: str, fg: str, accent: str, name_size: float = 30):
-    """Tiny wordmark above a one/two-line pack name, centred at (cx, cy) inside a label `w` px wide."""
+def lum(color: str) -> float:
+    r, g, b = _rgb(color)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def readable(fg: str, bg: str, min_diff: float = 95) -> str:
+    """Nudge `fg` until it contrasts with `bg` (keeps accent colours legible on any label)."""
+    if abs(lum(fg) - lum(bg)) >= min_diff:
+        return fg
+    return lighten(fg, 0.75) if lum(bg) < 140 else darken(fg, 0.55)
+
+
+def label_layout(brand: str, name: str, w: float, name_size: float = 30):
+    bsize = fit_size(brand.upper(), w * 0.94, 16, "serif", 9, ls=1.6) if brand else 0
+    lines = wrap_words(name, w * 0.94, name_size, "sans", 2) if name else []
+    nsize = fit_size(max(lines, key=len), w * 0.94, name_size, "sans", 14) if lines else 0
+    height = (bsize + 14 if brand else 0) + len(lines) * nsize * 1.14
+    return bsize, lines, nsize, height
+
+
+def label_text(cx: float, cy: float, w: float, brand: str, name: str, fg: str, accent: str, name_size: float = 30, bg: str | None = None):
+    """Tiny wordmark above a one/two-line pack name, vertically centred on (cx, cy) inside a label `w` px wide."""
+    if bg:
+        accent = readable(accent, bg)
+    bsize, lines, nsize, height = label_layout(brand, name, w, name_size)
     out = []
-    bsize = fit_size(brand.upper(), w * 0.9, 15, "serif", 9)
-    lines = wrap_words(name, w * 0.92, name_size, "sans", 2)
-    nsize = min(fit_size(max(lines, key=len), w * 0.92, name_size, "sans", 14), name_size)
-    block = bsize + 8 + len(lines) * nsize * 1.12
-    y = cy - block / 2 + bsize
-    out.append(txt(cx, y, brand.upper(), bsize, accent, "serif", 700, ls=1.6))
-    y += 6
-    out.append(line(cx - w * 0.16, y, cx + w * 0.16, y, 2, accent, op=0.8))
-    y += nsize * 0.95
+    y = cy - height / 2
+    if brand:
+        y += bsize * 0.9
+        out.append(txt(cx, y, brand.upper(), bsize, accent, "serif", 700, ls=1.6))
+        y += 8
+        out.append(line(cx - w * 0.14, y, cx + w * 0.14, y, 2, accent, op=0.8))
+        y += 4
+    y += nsize * 0.88
     for ln in lines:
         out.append(txt(cx, y, ln, nsize, fg, "sans", 800))
-        y += nsize * 1.12
+        y += nsize * 1.14
     return "".join(out)
 
 

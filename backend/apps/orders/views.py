@@ -20,6 +20,7 @@ from .serializers import (
     CancelSerializer,
     CaseCreateSerializer,
     CheckoutInputSerializer,
+    DecisionSerializer,
     SupportCaseSerializer,
     TrackSerializer,
     order_detail,
@@ -177,6 +178,30 @@ class OrderCancelView(APIView):
             actor=request.user if request.user.is_authenticated else None,
             reason=ser.validated_data["reason"],
             by_customer=True,
+        )
+        return Response(order_detail(order_queryset().get(pk=order.pk)))
+
+
+class SubstitutionDecisionView(APIView):
+    """The customer's answer to a "contact me before substituting" request."""
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(request=DecisionSerializer, responses={200: dict})
+    def post(self, request, number, pk):
+        from . import fulfilment
+        from .models import Substitution, SubstitutionStatus
+
+        ser = DecisionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        order = get_order_for_request(request, number)  # ownership: only this order's owner/token holder
+        sub = Substitution.objects.filter(pk=pk, order_item__order=order).first()
+        if sub is None:
+            raise DomainError(ErrorCode.NOT_FOUND, "We couldn't find that substitution.", status_code=404)
+        if sub.status != SubstitutionStatus.AWAITING_CUSTOMER:
+            raise DomainError(ErrorCode.INVALID_STATE, "You've already answered this one.", status_code=409)
+        fulfilment.decide_substitution(
+            sub.pk, ser.validated_data["approve"], request.user if request.user.is_authenticated else None
         )
         return Response(order_detail(order_queryset().get(pk=order.pk)))
 

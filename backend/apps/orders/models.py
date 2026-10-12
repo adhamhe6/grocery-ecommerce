@@ -161,6 +161,7 @@ class Order(TimeStampedModel):
 
 class OrderItemStatus(models.TextChoices):
     PENDING = "PENDING", "To pick"
+    PROPOSED = "PROPOSED", "Substitute awaiting approval"
     PICKED = "PICKED", "Picked"
     SHORT = "SHORT", "Short-picked"
     UNAVAILABLE = "UNAVAILABLE", "Unavailable"

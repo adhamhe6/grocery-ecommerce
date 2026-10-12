@@ -303,6 +303,7 @@ def commit_pick(order_item, picked_qty: Decimal, actor=None, on_date: dt.date | 
         batch = batches.get(alloc.batch_id) if alloc.batch_id else None
         return (batch.sellable_until if batch and batch.sellable_until else dt.date.max, alloc.id)
 
+    consumed: dict[int | None, Decimal] = {}  # batch id (None = unbatched) -> quantity sold, in FEFO order
     for alloc in sorted(allocs, key=fefo_key):
         use = min(alloc.qty, to_pick)
         to_pick -= use
@@ -310,27 +311,22 @@ def commit_pick(order_item, picked_qty: Decimal, actor=None, on_date: dt.date | 
         if batch is not None:
             batch.qty_reserved -= alloc.qty  # the whole reservation on this batch is consumed or released
         if use > 0:
-            level.on_hand -= use
+            consumed[alloc.batch_id] = consumed.get(alloc.batch_id, ZERO) + use
             if batch is not None:
                 batch.qty_remaining -= use
                 if batch.qty_remaining == 0:
                     batch.status = BatchStatus.DEPLETED
-            _movement(
-                product.id,
-                branch_id,
-                MovementKind.SALE,
-                -use,
-                level.on_hand,
-                batch=batch,
-                actor=actor,
-                ref_type="order",
-                ref_id=order.number,
-            )
             Allocation.objects.filter(pk=alloc.pk).update(qty=use, state=AllocationState.COMMITTED)
         else:
             Allocation.objects.filter(pk=alloc.pk).update(state=AllocationState.RELEASED)
         if batch is not None:
             batch.save(update_fields=["qty_remaining", "qty_reserved", "status", "updated_at"])
+    for batch_id, used in consumed.items():  # one ledger row per batch per pick
+        level.on_hand -= used
+        _movement(
+            product.id, branch_id, MovementKind.SALE, -used, level.on_hand,
+            batch=batches.get(batch_id) if batch_id else None, actor=actor, ref_type="order", ref_id=order.number,
+        )
     level.reserved -= total_reserved
     level.save(update_fields=["on_hand", "reserved", "updated_at"])
     return picked_qty
