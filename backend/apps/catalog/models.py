@@ -243,6 +243,13 @@ class Product(TimeStampedModel):
     def is_purchasable(self) -> bool:
         return self.status == ProductStatus.ACTIVE and self.is_available
 
+    @property
+    def category_is_live(self) -> bool:
+        """The storefront hides a product whose category (or parent department) is switched off; cart and checkout
+        must agree with that, or a shopper could hold a basket they can never buy. Needs `category__parent` loaded."""
+        category = self.category
+        return category.is_active and (category.parent_id is None or category.parent.is_active)
+
 
 class ProductImage(TimeStampedModel):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")

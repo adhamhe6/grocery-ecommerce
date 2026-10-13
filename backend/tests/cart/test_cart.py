@@ -456,3 +456,42 @@ class TestReorder:
         stranger = APIClient()
         stranger.force_authenticate(other_user)
         assert stranger.post(f"/api/v1/cart/reorder/{order.number}/").status_code == 404
+
+
+class TestCartAgreesWithCheckoutAndStorefront:
+    def test_a_product_in_a_switched_off_category_blocks_the_basket_instead_of_failing_at_checkout(
+        self, api, product_factory, stock_up, category
+    ):
+        p = product_factory(sku="CAT1", name="Pear", category=category)
+        stock_up(p, 10)
+        assert api.post("/api/v1/cart/items/", {"product_id": p.id, "quantity": "1"}, format="json").status_code == 201
+        type(category).objects.filter(pk=category.pk).update(is_active=False)
+        cart = api.get("/api/v1/cart/").json()
+        assert cart["can_checkout"] is False
+        assert [i["code"] for i in cart["lines"][0]["issues"]] == ["UNAVAILABLE"]
+
+    def test_a_product_whose_parent_department_is_switched_off_is_unavailable_too(
+        self, api, product_factory, stock_up, category
+    ):
+        p = product_factory(sku="CAT2", name="Plum", category=category)
+        stock_up(p, 10)
+        api.post("/api/v1/cart/items/", {"product_id": p.id, "quantity": "1"}, format="json")
+        type(category).objects.filter(pk=category.parent_id).update(is_active=False)
+        assert api.get("/api/v1/cart/").json()["can_checkout"] is False
+
+    def test_a_reorder_line_reduced_for_stock_is_reported_once_as_adjusted_not_also_as_added(
+        self, user, order_factory, product_factory, stock_up
+    ):
+        from rest_framework.test import APIClient
+
+        scarce = product_factory(sku="SCR", name="Scarce jam", price="3.00")
+        plenty = product_factory(sku="PLN", name="Plenty tea", price="2.00")
+        stock_up(scarce, 2)
+        stock_up(plenty, 50)
+        order, _ = order_factory([(scarce, 6), (plenty, 4)], customer=user, status="COMPLETED")
+        client = APIClient()
+        client.force_authenticate(user)
+        result = client.post(f"/api/v1/cart/reorder/{order.number}/").json()["reorder"]
+        assert [a["name"] for a in result["adjusted"]] == ["Scarce jam"]
+        assert result["adjusted"][0]["added"] == "2.000" or result["adjusted"][0]["added"] == "2"
+        assert [a["name"] for a in result["added"]] == ["Plenty tea"]

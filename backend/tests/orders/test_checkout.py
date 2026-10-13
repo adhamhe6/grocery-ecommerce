@@ -753,3 +753,36 @@ class TestIdempotencyScope:
             results.append(place(client, payload(slot_obj, payment_method="COD"), key="same-key-from-two-people"))
         assert [r.status_code for r in results] == [201, 201], [r.content for r in results]
         assert results[0].json()["number"] != results[1].json()["number"]
+
+
+class TestHonestHistoryAndSlotRace:
+    def test_a_cod_order_has_one_history_row_and_was_never_pending_payment(self, shop_client, slot):
+        number = place(shop_client, payload(slot, payment_method="COD")).json()["number"]
+        from apps.orders.models import Order
+
+        history = list(Order.objects.get(number=number).history.values_list("from_status", "to_status"))
+        assert history == [("", "CONFIRMED")]
+
+    def test_losing_the_last_place_in_a_slot_is_a_409_like_the_pre_check(self, slot, branch, zone):
+        """The atomic booking guard and the checkout pre-check must answer a full slot the same way."""
+        from apps.core.exceptions import DomainError
+        from apps.stores.services import book_slot
+
+        slot.capacity = slot.booked = 3
+        slot.save()
+        with pytest.raises(DomainError) as exc:
+            book_slot(slot.id, kind=slot.kind, branch_id=branch.id, zone_id=slot.zone_id)
+        assert exc.value.status_code == 409 and exc.value.code == "DELIVERY_SLOT_UNAVAILABLE"
+
+    def test_reusing_a_key_after_its_record_was_cleaned_up_is_a_409_not_a_500(self, user, milk, slot, make_slot):
+        from apps.core.models import IdempotencyRecord
+
+        client = APIClient()
+        client.force_authenticate(user)
+        body = {"fulfilment_type": "DELIVERY", "slot_id": slot.id, "payment_method": "COD", "address": ADDRESS}
+        client.post("/api/v1/cart/items/", {"product_id": milk.id, "quantity": "4"}, format="json")
+        assert place(client, body, key="old-key-from-last-week").status_code == 201
+        IdempotencyRecord.objects.all().delete()  # what the daily cleanup does once a record is old enough
+        client.post("/api/v1/cart/items/", {"product_id": milk.id, "quantity": "4"}, format="json")
+        again = place(client, body, key="old-key-from-last-week")
+        assert again.status_code == 409 and again.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"

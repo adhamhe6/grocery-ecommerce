@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from apps.catalog.models import Product, ProductImage, ProductStatus
 from apps.catalog.serializers import ProductCardSerializer
@@ -62,6 +62,7 @@ def _purchasable_product(product_id) -> Product:
     product = (
         Product.objects.select_related("category__parent", "brand", "sale_unit", "net_content_unit")
         .filter(pk=product_id, status=ProductStatus.ACTIVE, is_available=True, category__is_active=True)
+        .filter(Q(category__parent__isnull=True) | Q(category__parent__is_active=True))
         .first()
     )
     if product is None:
@@ -233,7 +234,7 @@ def load_lines(cart: Cart, branch_id: int | None, index=None):
 def detect_issues(item: CartItem, product: Product, line: PricedLine) -> list[dict]:
     issues = []
     avail = line.availability
-    if not product.is_purchasable:
+    if not product.is_purchasable or not product.category_is_live:
         issues.append({"code": "UNAVAILABLE", "blocking": True, "message": "No longer available."})
     elif avail.status == "OUT_OF_STOCK":
         issues.append({"code": "OUT_OF_STOCK", "blocking": True, "message": "Out of stock at your store."})
@@ -389,7 +390,7 @@ def fix_blocking_issues(cart: Cart, branch_id: int | None) -> list[str]:
 @transaction.atomic
 def reorder(cart: Cart, order, branch_id: int | None) -> dict:
     """Add a past order's items at today's prices/availability. Reports what was added, adjusted or skipped — never assumes."""
-    added, adjusted, skipped = [], [], []
+    added, adjusted, skipped = [], [], []  # a line is in exactly one list: added as ordered, added reduced, or skipped
     for old in order.items.filter(substitute_for__isnull=True).select_related("product"):
         product = old.product
         wanted = old.ordered_qty
@@ -400,7 +401,8 @@ def reorder(cart: Cart, order, branch_id: int | None) -> dict:
             if not avail.can_order:
                 skipped.append({"name": old.name, "reason": "Out of stock right now"})
                 continue
-            if avail.max_orderable is not None and wanted > avail.max_orderable:
+            reduced = avail.max_orderable is not None and wanted > avail.max_orderable
+            if reduced:
                 adjusted.append(
                     {
                         "name": old.name,
@@ -419,7 +421,8 @@ def reorder(cart: Cart, order, branch_id: int | None) -> dict:
                 CartItem.objects.create(
                     cart=cart, product=product, quantity=total, unit_price_seen=_current_unit_price(product, total)
                 )
-            added.append({"name": old.name, "quantity": str(wanted)})
+            if not reduced:
+                added.append({"name": old.name, "quantity": str(wanted)})
         except DomainError as exc:
             skipped.append({"name": old.name, "reason": exc.message})
     return {"added": added, "adjusted": adjusted, "skipped": skipped}

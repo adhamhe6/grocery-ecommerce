@@ -4,7 +4,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -144,6 +144,27 @@ class TestTabularReports:
         rep = staff("ADMIN").get("/api/v1/admin/reports/sales/").json()
         assert sum(D(r["gross_sales"]) for r in rep["rows"]) == D(rep["summary"]["gross_sales"]) == D("51.94")
         assert sum(r["orders"] for r in rep["rows"]) == 4
+
+    def test_a_day_with_only_refunds_still_appears_so_rows_add_up_to_the_summary(self, staff, world):
+        """Regression: refunds completed on a day with no new orders used to be missing from the daily rows."""
+        import datetime as dt
+
+        from django.utils import timezone
+
+        from apps.payments.models import Refund
+
+        Refund.objects.update(completed_at=timezone.now() - dt.timedelta(days=3))  # the 3.00 refund, three days ago
+        rep = staff("ADMIN").get("/api/v1/admin/reports/sales/").json()
+        assert sum(D(r["refunds"]) for r in rep["rows"]) == D(rep["summary"]["refunds"]) == D("3.00")
+        refund_day = next(r for r in rep["rows"] if D(r["refunds"]) == D("3.00"))
+        assert refund_day["orders"] == 0 and refund_day["aov"] == ""  # no orders that day: no average, not 0.00
+
+    def test_zero_average_pick_minutes_is_reported_as_zero_not_blank(self, staff, world):
+        from apps.orders.models import Order
+
+        Order.objects.filter(status="COMPLETED").update(ready_at=models.F("picking_started_at"))
+        rows = staff("ADMIN").get("/api/v1/admin/reports/branches/").json()["rows"]
+        assert any(r["avg_pick_minutes"] == "0.0" for r in rows)
 
     def test_every_report_renders_and_is_scoped(self, staff, branch, world):
         from apps.reports.queries import REPORTS

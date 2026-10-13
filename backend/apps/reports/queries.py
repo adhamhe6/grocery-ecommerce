@@ -366,7 +366,6 @@ def _report(columns, rows, summary=None) -> dict:
 
 def report_sales(period, branch_ids):
     accepted = orders_in(period.start, period.end, branch_ids).annotate(d=TruncDate("placed_at", tzinfo=period.tz))
-    rows = []
     refunds = {
         r["d"]: r["v"]
         for r in scope(
@@ -380,25 +379,28 @@ def report_sales(period, branch_ids):
         .values("d")
         .annotate(v=Sum("amount"))
     }
-    for r in (
-        accepted.values("d")
-        .annotate(
+    by_day = {
+        r["d"]: r
+        for r in accepted.values("d").annotate(
             orders=Count("id"),
             gross=Sum(AMOUNT_DUE),
             disc=Sum("coupon_discount") + Sum("promo_savings"),
             delivery=Sum("delivery_fee"),
         )
-        .order_by("d")
-    ):
+    }
+    rows = []
+    # A day with refunds but no new orders is still a day: otherwise the rows would not add up to the summary.
+    for day in sorted(set(by_day) | set(refunds)):
+        r = by_day.get(day)
         rows.append(
             {
-                "date": r["d"].isoformat(),
-                "orders": r["orders"],
-                "gross_sales": str(money(r["gross"])),
-                "aov": str(money(r["gross"] / r["orders"])),
-                "discounts": str(money(r["disc"])),
-                "delivery_fees": str(money(r["delivery"])),
-                "refunds": str(money(refunds.get(r["d"], ZERO))),
+                "date": day.isoformat(),
+                "orders": r["orders"] if r else 0,
+                "gross_sales": str(money(r["gross"])) if r else "0.00",
+                "aov": str(money(r["gross"] / r["orders"])) if r else "",  # no orders, no average (not 0.00)
+                "discounts": str(money(r["disc"])) if r else "0.00",
+                "delivery_fees": str(money(r["delivery"])) if r else "0.00",
+                "refunds": str(money(refunds.get(day, ZERO))),
             }
         )
     s = sales_summary(period.start, period.end, branch_ids)
@@ -518,7 +520,9 @@ def report_branches(period, branch_ids):
                 "aov": str(money(r["gross"] / r["orders"])),
                 "cancelled": cancelled,
                 "on_time_rate": str(ful["on_time_rate"]) if ful["on_time_rate"] is not None else "",
-                "avg_pick_minutes": str(ful["avg_pick_to_ready_minutes"] or ""),
+                "avg_pick_minutes": ""
+                if ful["avg_pick_to_ready_minutes"] is None
+                else str(ful["avg_pick_to_ready_minutes"]),
             }
         )
     cols = [

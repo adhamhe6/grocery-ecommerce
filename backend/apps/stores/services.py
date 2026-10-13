@@ -133,18 +133,26 @@ def book_slot(
         or (kind == SlotKind.DELIVERY and slot.zone_id != zone_id)
     ):
         raise DomainError(
-            ErrorCode.DELIVERY_SLOT_UNAVAILABLE, "That time slot is no longer available. Please choose another."
+            ErrorCode.DELIVERY_SLOT_UNAVAILABLE,
+            "That time slot is no longer available. Please choose another.",
+            status_code=409,
         )
     now = now or timezone.now()
     if not slot.is_open or slot_start(slot) < earliest_bookable(slot.branch, now):
         raise DomainError(
-            ErrorCode.DELIVERY_SLOT_UNAVAILABLE, "That time slot is no longer bookable. Please choose a later one."
+            ErrorCode.DELIVERY_SLOT_UNAVAILABLE,
+            "That time slot is no longer bookable. Please choose a later one.",
+            status_code=409,
         )
     updated = DeliverySlot.objects.filter(pk=slot_id, is_open=True, booked__lt=F("capacity")).update(
         booked=F("booked") + 1
     )
     if not updated:
-        raise DomainError(ErrorCode.DELIVERY_SLOT_UNAVAILABLE, "That time slot just filled up. Please choose another.")
+        raise DomainError(
+            ErrorCode.DELIVERY_SLOT_UNAVAILABLE,
+            "That time slot just filled up. Please choose another.",
+            status_code=409,
+        )
     slot.refresh_from_db()
     return slot
 

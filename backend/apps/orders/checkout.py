@@ -178,7 +178,7 @@ def _check_slot(
     return slot
 
 
-def prepare(cart: Cart, user, data: CheckoutInput, *, lock: bool = False) -> Prepared:
+def prepare(cart: Cart, user, data: CheckoutInput) -> Prepared:
     store = StoreSettings.load()
     now = timezone.now()
     items = list(
@@ -218,7 +218,7 @@ def prepare(cart: Cart, user, data: CheckoutInput, *, lock: bool = False) -> Pre
     entries = []
     for item in items:
         product = live.get(item.product_id)
-        if product is None or not product.is_purchasable or not product.category.is_active:
+        if product is None or not product.is_purchasable or not product.category_is_live:
             problems.append(
                 {
                     "product_id": item.product_id,
@@ -457,6 +457,13 @@ def place_order(*, cart: Cart | None, user, data: CheckoutInput, idempotency_key
         # Idempotency is scoped per actor, so the order's own (globally unique) key must be too: two different shoppers
         # that happen to send the same client-generated key must never collide on the order table.
         order_key = hashlib.sha256(f"{actor_key}|{idempotency_key}".encode()).hexdigest()
+        if Order.objects.filter(checkout_key=order_key).exists():
+            # The idempotency record was cleaned up (it is kept for days), but an order made with this key still exists.
+            raise DomainError(
+                ErrorCode.IDEMPOTENCY_CONFLICT,
+                "This request key was already used for an earlier order. Please refresh and try again.",
+                status_code=409,
+            )
         order, items = _create_order(p, user, data, order_key)
 
         reserve_requests = [
@@ -468,22 +475,17 @@ def place_order(*, cart: Cart | None, user, data: CheckoutInput, idempotency_key
             coupons.redeem(p.coupon, order, user, p.contact["email"])
         payment = payments.create_payment_attempt(order, data.payment_method)
 
+        # One honest history row: a pay-on-delivery order is confirmed the moment it is placed — it was never "pending payment".
         OrderStatusHistory.objects.create(
             order=order,
             from_status="",
             to_status=order.status,
             actor=user,
             actor_label=getattr(user, "email", "guest"),
-            public_note="Order placed",
+            public_note="Order placed"
+            if order.status == OrderStatus.PENDING_PAYMENT
+            else "Order placed and confirmed — you'll pay on delivery/pickup",
         )
-        if order.status == OrderStatus.CONFIRMED:
-            OrderStatusHistory.objects.create(
-                order=order,
-                from_status=OrderStatus.PENDING_PAYMENT,
-                to_status=OrderStatus.CONFIRMED,
-                actor_label="system",
-                public_note="Order confirmed — you'll pay on delivery/pickup",
-            )
         if user is not None and data.save_address and data.address and not data.address_id:
             Address.objects.get_or_create(
                 user=user,

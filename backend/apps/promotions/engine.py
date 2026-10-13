@@ -2,7 +2,7 @@
 
 Rules (documented in docs/commerce-workflows.md):
 * Promotions never stack on one product: the one giving the lowest line total for the quantity wins
-  (ties → lowest `priority`, then id).
+  (ties → the older promotion, i.e. lowest id).
 * Unit prices are rounded to cents; a line total is `money(effective_unit_price × quantity)` for
   percent/amount promotions and `groups × multibuy_price + remainder × base` for multibuy.
 """

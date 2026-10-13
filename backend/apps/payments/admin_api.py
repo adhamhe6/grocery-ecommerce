@@ -6,6 +6,7 @@ import datetime as dt
 from decimal import Decimal
 
 from django.db.models import Count, Q, Sum
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -159,7 +160,7 @@ class ReconciliationView(APIView):
     def get(self, request):
         raw = request.query_params.get("date")
         try:
-            day = dt.date.fromisoformat(raw) if raw else dt.date.today()
+            day = dt.date.fromisoformat(raw) if raw else timezone.localdate()  # the store's today, not the server's
         except ValueError:
             raise DomainError(ErrorCode.VALIDATION_ERROR, "date must look like 2026-10-31.") from None
         branches = branch_ids_for(request.user)
