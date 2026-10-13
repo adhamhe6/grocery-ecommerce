@@ -123,52 +123,53 @@ def existing_counts() -> dict[str, int]:
 # ----------------------------------------------------------------------------------------- reset
 def reset_perf(log: Callable[[str], None] = lambda _msg: None) -> dict[str, int]:
     """Delete only rows this generator (or the checkout-race load scenario, same e-mail domain) created."""
-    from apps.catalog.signals import product_deleted
     from django.db.models.signals import post_delete
+
+    from apps.catalog.signals import product_deleted
 
     deleted: Counter[str] = Counter()
     perf_email = Q(contact_email__endswith=f"@{EMAIL_DOMAIN}")
     perf_orders = Order.objects.filter(perf_email)
     perf_products = Product.objects.filter(sku__startswith=SKU_PREFIX)
 
+    def own(result: tuple[int, dict[str, int]], label: str) -> int:
+        return result[1].get(label, 0)  # rows of the model itself, not rows removed by cascade
+
     with transaction.atomic(), relaxed_durability():
         log("reset: stock ledger")
-        n, _ = StockMovement.objects.filter(Q(ref_type=MOVEMENT_REF) | Q(product__in=perf_products)).delete()
-        deleted["stock movements"] = n
+        movements = StockMovement.objects.filter(Q(ref_type=MOVEMENT_REF) | Q(product__in=perf_products))
+        deleted["stock movements"] = own(movements.delete(), "inventory.StockMovement")
         log("reset: refunds and payments")
-        deleted["refunds"] = Refund.objects.filter(order__in=perf_orders).delete()[0]
-        deleted["payments"] = Payment.objects.filter(order__in=perf_orders).delete()[0]
+        deleted["refunds"] = own(Refund.objects.filter(order__in=perf_orders).delete(), "payments.Refund")
+        deleted["payments"] = own(Payment.objects.filter(order__in=perf_orders).delete(), "payments.Payment")
         log("reset: orders (items and history cascade)")
         ids = list(perf_orders.order_by("id").values_list("id", flat=True))
-        total = 0
         for part in chunks(ids, 5000):
-            total += Order.objects.filter(id__in=part).delete()[1].get("orders.Order", 0)
-        deleted["orders"] = total
+            deleted["orders"] += own(Order.objects.filter(id__in=part).delete(), "orders.Order")
         log("reset: batches, stock levels, images, products")
-        deleted["batches"] = Batch.objects.filter(product__in=perf_products).delete()[0]
-        StockLevel.objects.filter(product__in=perf_products)._raw_delete(StockLevel.objects.db)
-        ProductImage.objects.filter(product__in=perf_products)._raw_delete(ProductImage.objects.db)
+        deleted["batches"] = own(Batch.objects.filter(product__in=perf_products).delete(), "inventory.Batch")
+        db = StockLevel.objects.db
+        deleted["stock levels"] = StockLevel.objects.filter(product__in=perf_products)._raw_delete(db)
+        deleted["product images"] = ProductImage.objects.filter(product__in=perf_products)._raw_delete(db)
         post_delete.disconnect(product_deleted, sender=Product)  # it would bump the cache once per product
         try:
             pids = list(perf_products.order_by("id").values_list("id", flat=True))
-            count = 0
             for part in chunks(pids, 2000):
-                count += Product.objects.filter(id__in=part).delete()[1].get("catalog.Product", 0)
-            deleted["products"] = count
+                deleted["products"] += own(Product.objects.filter(id__in=part).delete(), "catalog.Product")
         finally:
             post_delete.connect(product_deleted, sender=Product)
-        deleted["brands"] = Brand.objects.filter(slug__startswith=BRAND_SLUG_PREFIX, is_demo=True).delete()[0]
-        deleted["promotions"] = Promotion.objects.filter(name__startswith=PROMO_NAME_PREFIX, is_demo=True).delete()[0]
+        brands = Brand.objects.filter(slug__startswith=BRAND_SLUG_PREFIX, is_demo=True).delete()
+        deleted["brands"] = own(brands, "catalog.Brand")
+        promos = Promotion.objects.filter(name__startswith=PROMO_NAME_PREFIX, is_demo=True).delete()
+        deleted["promotions"] = own(promos, "promotions.Promotion")
         log("reset: customers")
         uids = list(
             User.objects.filter(email__endswith=f"@{EMAIL_DOMAIN}", role=rbac.CUSTOMER)
             .order_by("id")
             .values_list("id", flat=True)
         )
-        users = 0
         for part in chunks(uids, 5000):
-            users += User.objects.filter(id__in=part).delete()[1].get("accounts.User", 0)
-        deleted["customers"] = users
+            deleted["customers"] += own(User.objects.filter(id__in=part).delete(), "accounts.User")
     core_cache.bump("catalog")
     core_cache.bump("home")
     return {k: v for k, v in deleted.items() if v}
@@ -222,7 +223,7 @@ class PerfSeeder:
             self._customers()
             self._orders()
             self._finalise()
-        self.phase("ANALYZE")
+        self.phase("VACUUM (ANALYZE) on the touched tables")
         self._analyze()
         core_cache.bump("catalog")
         core_cache.bump("home")
@@ -243,7 +244,9 @@ class PerfSeeder:
 
         branches = list(Branch.objects.filter(is_active=True).prefetch_related("zones").order_by("-is_default", "id"))
         if not branches:
-            raise SeedProblem("No active branches. Run `python manage.py seed_demo --skip-images` in this database first.")
+            raise SeedProblem(
+                "No active branches. Run `python manage.py seed_demo --skip-images` in this database first."
+            )
         if len(branches) < 2:
             self.notes.append("Only one active branch exists, so stock levels were created for one branch.")
         refs = []
@@ -263,15 +266,15 @@ class PerfSeeder:
         self.branch_by_id = {b.id: b for b in refs}
 
         self.units = {u.code: u for u in SaleUnit.objects.all()}
-        missing = [c for c in ("each", "pack", "kg", "g", "ml", "l") if c not in self.units]
+        missing = [c for c in ("each", "pack", "box", "bundle", "dozen", "kg", "g", "ml", "l") if c not in self.units]
         if missing:
-            raise SeedProblem(f"Sale units missing: {', '.join(missing)}. Run migrations, then seed_demo --skip-images.")
+            raise SeedProblem(
+                f"Sale units missing: {', '.join(missing)}. Run migrations, then seed_demo --skip-images."
+            )
 
         cats = list(Category.objects.filter(is_active=True).select_related("parent").order_by("id"))
         parents = {c.parent_id for c in cats if c.parent_id}
-        leaves = [
-            c for c in cats if c.id not in parents and (c.parent_id is None or (c.parent and c.parent.is_active))
-        ]
+        leaves = [c for c in cats if c.id not in parents and (c.parent_id is None or (c.parent and c.parent.is_active))]
         if not leaves:
             raise SeedProblem("No categories. Run `python manage.py seed_demo --skip-images` in this database first.")
         self.leaf_categories = leaves
@@ -315,6 +318,8 @@ class PerfSeeder:
         if perishable:
             picks.append(("PERF Fresh deal", rng.sample(perishable, 1)))
         for name, cats in picks:
+            if Promotion.objects.filter(name=name).exists():
+                continue
             promo = Promotion.objects.create(
                 name=name,
                 label="15% off",
@@ -450,7 +455,10 @@ class PerfSeeder:
         name, widths = o.image_path, PLACEHOLDER_WIDTHS
         if not name:
             existing = (
-                ProductImage.objects.exclude(product__sku__startswith=SKU_PREFIX).order_by("id").only("image", "image_widths").first()
+                ProductImage.objects.exclude(product__sku__startswith=SKU_PREFIX)
+                .order_by("id")
+                .only("image", "image_widths")
+                .first()
             )
             if existing is not None:
                 name, widths = existing.image.name, list(existing.image_widths)
@@ -677,7 +685,7 @@ class PerfSeeder:
         ]
         created = Order.objects.bulk_create(rows, batch_size=o.batch_size)
         for plan, row in zip(plans, created, strict=True):
-            plan.pk = row.pk  # type: ignore[attr-defined]
+            plan.pk = row.pk
 
         items, history, payments = [], [], []
         sales = []
@@ -687,7 +695,7 @@ class PerfSeeder:
                 symbol, uname = unit_by_code[prod.unit_code]
                 items.append(
                     OrderItem(
-                        order_id=p.pk,  # type: ignore[attr-defined]
+                        order_id=p.pk,
                         product_id=prod.pk,
                         name=prod.name,
                         sku=prod.sku,
@@ -727,7 +735,7 @@ class PerfSeeder:
             for h in p.history:
                 history.append(
                     OrderStatusHistory(
-                        order_id=p.pk,  # type: ignore[attr-defined]
+                        order_id=p.pk,
                         from_status=h.from_status,
                         to_status=h.to_status,
                         actor_label=h.actor_label[:254],
@@ -738,7 +746,7 @@ class PerfSeeder:
             pay = p.payment
             payments.append(
                 Payment(
-                    order_id=p.pk,  # type: ignore[attr-defined]
+                    order_id=p.pk,
                     provider=pay["provider"],
                     method=pay["method"],
                     state=pay["state"],
@@ -770,7 +778,7 @@ class PerfSeeder:
                 refunds.append(
                     Refund(
                         payment_id=pay_row.pk,
-                        order_id=p.pk,  # type: ignore[attr-defined]
+                        order_id=p.pk,
                         amount=p.refund["amount"],
                         reason=p.refund["reason"],
                         status="SUCCEEDED",
@@ -803,7 +811,7 @@ class PerfSeeder:
                     SELECT i.product_id, ROUND(SUM(i.ordered_qty)) AS total
                     FROM {oi} i JOIN {od} o ON o.id = i.order_id
                     WHERE o.contact_email LIKE %(email)s AND o.placed_at >= %(since)s
-                      AND o.status NOT IN %(excluded)s AND i.substitute_for_id IS NULL
+                      AND o.status <> ALL(%(excluded)s) AND i.substitute_for_id IS NULL
                     GROUP BY i.product_id
                 ) s
                 WHERE p.id = s.product_id AND p.sku LIKE %(sku)s
@@ -811,7 +819,7 @@ class PerfSeeder:
                 {
                     "email": f"%@{EMAIL_DOMAIN}",
                     "since": since,
-                    "excluded": OPEN_PAYMENT_EXCLUDED,
+                    "excluded": list(OPEN_PAYMENT_EXCLUDED),
                     "sku": f"{SKU_PREFIX}%",
                 },
             )
@@ -858,7 +866,10 @@ class PerfSeeder:
         self.counts["stock movements (total)"] = StockMovement.objects.filter(ref_type=MOVEMENT_REF).count()
 
     def _analyze(self) -> None:
+        """VACUUM (ANALYZE) when possible (sets the visibility map, so index-only scans become available, as in a
+        settled production database); plain ANALYZE inside an enclosing transaction (VACUUM cannot run there)."""
         qn = connection.ops.quote_name
+        command = "ANALYZE" if connection.in_atomic_block else "VACUUM (ANALYZE)"
         with connection.cursor() as cur:
             for model in ANALYZE_MODELS:
-                cur.execute(f"ANALYZE {qn(model._meta.db_table)}")  # noqa: S608
+                cur.execute(f"{command} {qn(model._meta.db_table)}")  # noqa: S608 - fixed command, quoted table name

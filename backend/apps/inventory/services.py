@@ -21,12 +21,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
 from apps.core.exceptions import DomainError, ErrorCode
-from apps.core.money import ZERO, qty
+from apps.core.money import ZERO, qty, qty_str
 
 from .availability import sellable_batch_q
 from .models import (
@@ -235,8 +235,9 @@ def commit_pick(order_item, picked_qty: Decimal, actor=None, on_date: dt.date | 
     """Turn the reservation for `order_item` into a sale of `picked_qty`. Returns the quantity committed.
 
     * picked < reserved → the unused reservation is released.
-    * picked > reserved (variable-weight lines are reserved with the tolerance buffer, so this stays within it) →
-      the difference is taken from available stock or the call fails with INSUFFICIENT_STOCK.
+    * picked > reserved (checkout reserves only the *ordered* quantity — the weight tolerance buffer applies to the card
+      authorisation, not to stock) → the difference is taken from available (unreserved) stock or the call fails with
+      INSUFFICIENT_STOCK.
     * Reservations on batches that were blocked/expired since the order was placed are re-allocated first.
     Idempotent: a second call finds no RESERVED allocations and raises INVALID_STATE.
     """
@@ -348,6 +349,22 @@ def _batch_sellable(batch: Batch, on_date: dt.date) -> bool:
 
 
 # ----------------------------------------------------------------------------------------- receiving / adjustments
+def _reactivate_if_depleted(batch: Batch, today: dt.date | None = None) -> None:
+    """A lot that holds units again must not keep claiming to be used up.
+
+    `DEPLETED` only ever means "nothing left", so it is replaced by `ACTIVE` — or by `EXPIRED` when the lot's date has
+    already passed, so it shows up on the expiry worklist straight away instead of waiting for the hourly scan.
+    Quarantine, expiry and a failed inspection are separate flags (`status` QUARANTINED/EXPIRED, `quality_status`) that
+    are never touched here, so a blocked lot stays blocked: `sellable_batch_q` still requires ACTIVE *and* PASSED.
+    Does not save; the caller includes `status` in its `update_fields`.
+    """
+    if batch.status != BatchStatus.DEPLETED or batch.qty_remaining <= 0:
+        return
+    today = today or timezone.localdate()
+    expired = batch.expiry_date is not None and batch.expiry_date < today
+    batch.status = BatchStatus.EXPIRED if expired else BatchStatus.ACTIVE
+
+
 def compute_sellable_until(product, expiry_date: dt.date | None) -> dt.date | None:
     if expiry_date is None:
         return None
@@ -410,7 +427,8 @@ def receive_stock(
                 )
             batch.qty_received += quantity
             batch.qty_remaining += quantity
-            batch.save(update_fields=["qty_received", "qty_remaining", "updated_at"])
+            _reactivate_if_depleted(batch)
+            batch.save(update_fields=["qty_received", "qty_remaining", "status", "updated_at"])
     level.on_hand += quantity
     level.save(update_fields=["on_hand", "updated_at"])
     _movement(
@@ -489,6 +507,55 @@ def adjust_stock(
     )
 
 
+def _move_reservations_off_batch(batch: Batch, *, shortfall: Decimal, today: dt.date) -> None:
+    """Free at least `shortfall` reserved units on a batch that can no longer be sold, by re-planning whole reservations
+    (newest first) onto other sellable lots, FEFO, at the later of today and the order's slot date.
+
+    Each moved reservation is released and re-reserved through the normal `release_allocations` / `reserve` path, so the
+    allocation rows and the batch and level counters always change together. All-or-nothing: if the other lots cannot
+    cover what has to move, nothing changes and INSUFFICIENT_STOCK names the orders in the way (the work is done in a
+    savepoint, so a caller that catches the error and carries on in the same transaction sees consistent counters).
+    """
+    open_allocs = list(
+        Allocation.objects.select_for_update(of=("self",))
+        .select_related("order_item__order__slot", "product")
+        .filter(batch=batch, state=AllocationState.RESERVED)
+        .order_by("-id")
+    )
+    chosen: list[Allocation] = []
+    freed = ZERO
+    for alloc in open_allocs:
+        if freed >= shortfall:
+            break
+        chosen.append(alloc)
+        freed += alloc.qty
+    try:
+        with transaction.atomic():
+            for alloc in chosen:
+                order = alloc.order_item.order
+                when = max(today, order.slot.date) if order.slot_id else today
+                release_allocations([alloc])
+                reserve([ReserveRequest(alloc.order_item, alloc.product, alloc.qty)], batch.branch_id, when)
+    except DomainError as exc:
+        if exc.code != ErrorCode.INSUFFICIENT_STOCK:
+            raise
+        orders = sorted({a.order_item.order.number for a in open_allocs})
+        writable = batch.qty_remaining - batch.qty_reserved
+        shown = ", ".join(orders[:5]) + (f" and {len(orders) - 5} more" if len(orders) > 5 else "")
+        raise DomainError(
+            ErrorCode.INSUFFICIENT_STOCK,
+            f"Lot {batch.lot_code} has {qty_str(batch.qty_reserved)} reserved for open customer orders ({shown}) and "
+            f"there isn't enough other sellable stock to move them to, so at most {qty_str(writable)} can be written "
+            "off now. Pick or cancel those orders first, or receive replacement stock.",
+            status_code=409,
+            details={
+                "reserved": qty_str(batch.qty_reserved),
+                "writable_off": qty_str(writable),
+                "orders": orders,
+            },
+        ) from exc
+
+
 def record_waste(
     product,
     branch_id: int,
@@ -498,7 +565,17 @@ def record_waste(
     actor=None,
     batch: Batch | None = None,
     note: str = "",
+    on_date: dt.date | None = None,
 ) -> StockMovement:
+    """Write stock off. The reserved counters and the RESERVED allocation rows are never allowed to drift apart.
+
+    * A sellable lot can only lose its unreserved part: those units are promised to customer orders.
+    * A lot that can no longer be sold (EXPIRED, QUARANTINED, failed inspection, past its sell-by date) may be written
+      off below its reserved quantity only after the affected reservations have been re-planned onto other sellable
+      lots (see `_move_reservations_off_batch`); if other stock can't cover them the write-off is refused with a message
+      naming the orders. Either way, afterwards Σ open allocations per level and per batch equal the reserved counters,
+      so the affected orders still pick and cancel normally.
+    """
     _require_transaction()
     quantity = qty(quantity)
     if quantity <= 0:
@@ -511,21 +588,24 @@ def record_waste(
         if batch is None:
             raise DomainError(ErrorCode.VALIDATION_ERROR, "Choose the batch the waste came from.")
         batch = Batch.objects.select_for_update().get(pk=batch.pk, product=product, branch_id=branch_id)
-        # Expired/blocked batches may be written off even if (stale) reservations remain: those are re-allocated at pick time.
-        writeoff_floor = ZERO if batch.status in (BatchStatus.EXPIRED, BatchStatus.QUARANTINED) else batch.qty_reserved
-        if batch.qty_remaining - quantity < writeoff_floor:
-            raise DomainError(
-                ErrorCode.INSUFFICIENT_STOCK, "That quantity is reserved for customer orders.", status_code=409
-            )
         if batch.qty_remaining < quantity:
             raise DomainError(
                 ErrorCode.INSUFFICIENT_STOCK, f"Batch only has {batch.qty_remaining} left.", status_code=409
             )
+        shortfall = batch.qty_reserved - (batch.qty_remaining - quantity)
+        if shortfall > 0:  # the write-off would eat into units promised to customer orders
+            today = on_date or timezone.localdate()
+            if _batch_sellable(batch, today):
+                raise DomainError(
+                    ErrorCode.INSUFFICIENT_STOCK, "That quantity is reserved for customer orders.", status_code=409
+                )
+            _move_reservations_off_batch(batch, shortfall=shortfall, today=today)
+            batch.refresh_from_db()
+            level.refresh_from_db()
         batch.qty_remaining -= quantity
-        batch.qty_reserved = min(batch.qty_reserved, batch.qty_remaining)
-        if batch.qty_remaining == 0:
-            batch.status = BatchStatus.DEPLETED if batch.status == BatchStatus.ACTIVE else batch.status
-        batch.save(update_fields=["qty_remaining", "qty_reserved", "status", "updated_at"])
+        if batch.qty_remaining == 0 and batch.status == BatchStatus.ACTIVE:
+            batch.status = BatchStatus.DEPLETED
+        batch.save(update_fields=["qty_remaining", "status", "updated_at"])
     elif level.on_hand - quantity < level.reserved:
         raise DomainError(
             ErrorCode.INSUFFICIENT_STOCK, "That quantity is reserved for customer orders.", status_code=409
@@ -533,17 +613,7 @@ def record_waste(
     if level.on_hand < quantity:
         raise DomainError(ErrorCode.INSUFFICIENT_STOCK, f"Only {level.on_hand} on hand.", status_code=409)
     level.on_hand -= quantity
-    if product.tracks_batches:
-        level.reserved = min(level.reserved, level.on_hand)
-        level.reserved = max(
-            ZERO,
-            min(
-                level.reserved,
-                Batch.objects.filter(product=product, branch_id=branch_id).aggregate(s=Sum("qty_reserved"))["s"]
-                or ZERO,
-            ),
-        )
-    level.save(update_fields=["on_hand", "reserved", "updated_at"])
+    level.save(update_fields=["on_hand", "updated_at"])
     return _movement(
         product.id,
         branch_id,
@@ -555,6 +625,27 @@ def record_waste(
         reason=reason_code,
         note=note,
     )
+
+
+def _require_mergeable(dest: Batch, src: Batch, src_status: str) -> None:
+    """A transfer into a lot code that already exists at the destination merges the units into it, so both must describe
+    the same goods — the rule `receive_stock` applies to the expiry date, plus the blocking state: units of a quarantined
+    or failed lot must not turn sellable by joining a live one, nor good units become blocked by joining a blocked one.
+    A DEPLETED destination holds nothing, so it counts as ACTIVE (and is revived by the merge)."""
+    if dest.expiry_date != src.expiry_date:
+        raise DomainError(
+            ErrorCode.VALIDATION_ERROR,
+            f"Lot {src.lot_code} already exists at the destination with a different expiry date.",
+        )
+    dest_status = BatchStatus.ACTIVE if dest.status == BatchStatus.DEPLETED else dest.status
+    if (dest_status, dest.quality_status) != (src_status, src.quality_status):
+        raise DomainError(
+            ErrorCode.VALIDATION_ERROR,
+            f"Lot {src.lot_code} already exists at the destination with a different status "
+            f"({BatchStatus(dest_status).label}, inspection {QualityStatus(dest.quality_status).label.lower()}) from "
+            f"this one ({BatchStatus(src_status).label}, inspection {QualityStatus(src.quality_status).label.lower()}), "
+            "so the two can't be merged. Resolve the status of both lots first.",
+        )
 
 
 def transfer_stock(
@@ -578,6 +669,8 @@ def transfer_stock(
     lock_levels([product.id], first)
     lock_levels([product.id], second)
     src = StockLevel.objects.select_for_update().get(product=product, branch_id=from_branch_id)
+    dest_batch = None
+    src_status = None
     if product.tracks_batches:
         if batch is None:
             raise DomainError(ErrorCode.VALIDATION_ERROR, "Choose the batch to transfer.")
@@ -586,8 +679,18 @@ def transfer_stock(
             raise DomainError(
                 ErrorCode.INSUFFICIENT_STOCK, "Not enough unreserved stock in that batch.", status_code=409
             )
+        # Look at the destination before touching anything, so a refused merge leaves both branches exactly as they were.
+        dest_batch = (
+            Batch.objects.select_for_update()
+            .filter(product=product, branch_id=to_branch_id, lot_code=batch.lot_code)
+            .first()
+        )
+        # The lot's state *before* this transfer: depleting the source must not leak into the destination lot.
+        src_status = BatchStatus.ACTIVE if batch.status == BatchStatus.DEPLETED else batch.status
+        if dest_batch is not None:
+            _require_mergeable(dest_batch, batch, src_status)
         batch.qty_remaining -= quantity
-        if batch.qty_remaining == 0:
+        if batch.qty_remaining == 0 and batch.status == BatchStatus.ACTIVE:  # a blocked lot keeps its blocking status
             batch.status = BatchStatus.DEPLETED
         batch.save(update_fields=["qty_remaining", "status", "updated_at"])
     elif src.on_hand - src.reserved < quantity:
@@ -607,13 +710,7 @@ def transfer_stock(
         ref_id=to_branch_id,
     )
     dest_level = StockLevel.objects.select_for_update().get(product=product, branch_id=to_branch_id)
-    dest_batch = None
     if batch is not None:
-        dest_batch = (
-            Batch.objects.select_for_update()
-            .filter(product=product, branch_id=to_branch_id, lot_code=batch.lot_code)
-            .first()
-        )
         if dest_batch is None:
             dest_batch = Batch.objects.create(
                 product=product,
@@ -628,13 +725,14 @@ def transfer_stock(
                 qty_remaining=quantity,
                 unit_cost=batch.unit_cost,
                 quality_status=batch.quality_status,
-                status=batch.status,
+                status=src_status,
                 is_demo=batch.is_demo,
             )
         else:
             dest_batch.qty_received += quantity
             dest_batch.qty_remaining += quantity
-            dest_batch.save(update_fields=["qty_received", "qty_remaining", "updated_at"])
+            _reactivate_if_depleted(dest_batch)
+            dest_batch.save(update_fields=["qty_received", "qty_remaining", "status", "updated_at"])
     dest_level.on_hand += quantity
     dest_level.save(update_fields=["on_hand", "updated_at"])
     into = _movement(

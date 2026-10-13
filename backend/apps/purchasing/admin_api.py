@@ -165,6 +165,10 @@ class ReasonSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=300)
 
 
+class CloseSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
+
+
 def po_row(po: PurchaseOrder) -> dict:
     return {
         "id": po.id,
@@ -239,6 +243,7 @@ class PurchaseOrderViewSet(viewsets.ReadOnlyModelViewSet):
         "submit": "purchasing.write",
         "confirm": "purchasing.write",
         "cancel": "purchasing.write",
+        "close": "purchasing.write",
         "receive": "purchasing.receive",
     }
     http_method_names = ["get", "post", "put", "patch", "head", "options"]
@@ -329,6 +334,15 @@ class PurchaseOrderViewSet(viewsets.ReadOnlyModelViewSet):
         ser = ReasonSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         services.cancel_po(self.get_object(), request.user, ser.validated_data["reason"])
+        return Response(po_detail(self.get_queryset().get(pk=pk)))
+
+    @extend_schema(request=CloseSerializer, responses={200: dict})
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        """Close a partly received order short (no further receiving). Idempotent; audited as `po.closed`."""
+        ser = CloseSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        services.close_purchase_order(self.get_object(), request.user, ser.validated_data["reason"])
         return Response(po_detail(self.get_queryset().get(pk=pk)))
 
     @extend_schema(request=ReceiveSerializer, responses={200: dict})

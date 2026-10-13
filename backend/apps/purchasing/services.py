@@ -1,5 +1,13 @@
 """Purchase orders and goods receiving.
 
+Status transitions (each is one function below; anything else is refused with `409 INVALID_STATE`):
+
+    DRAFT --submit_po--> SUBMITTED --confirm_po--> CONFIRMED          (confirming is optional)
+    DRAFT / SUBMITTED / CONFIRMED --cancel_po--> CANCELLED            (only while no goods have been received)
+    SUBMITTED / CONFIRMED / PARTIALLY_RECEIVED --receive_goods--> PARTIALLY_RECEIVED, or RECEIVED once every line is in
+    PARTIALLY_RECEIVED --close_purchase_order--> CLOSED               (finish off an order the supplier won't complete)
+    RECEIVED, CANCELLED and CLOSED are final: nothing more can be received against them.
+
 Receiving is idempotent (`GoodsReceipt.idempotency_key` is unique per PO) and all-or-nothing: stock, batches, PO progress
 and the receipt rows are written in one transaction, so a double submit can never put the same delivery on the shelf twice.
 """
@@ -18,6 +26,7 @@ from django.utils import timezone
 from apps.catalog.models import Product
 from apps.core import audit
 from apps.core.exceptions import DomainError, ErrorCode
+from apps.core.middleware import store_timezone
 from apps.core.money import ZERO, qty
 from apps.inventory import services as inventory
 from apps.inventory.models import MovementKind, StockLevel, StockMovement
@@ -126,11 +135,11 @@ def confirm_po(po: PurchaseOrder, actor) -> PurchaseOrder:
 def cancel_po(po: PurchaseOrder, actor, reason: str) -> PurchaseOrder:
     locked = PurchaseOrder.objects.select_for_update().get(pk=po.pk)
     if locked.receipts.exists():
-        raise DomainError(
-            ErrorCode.INVALID_STATE,
-            "Goods have already been received against this order. Close it instead of cancelling.",
-            status_code=409,
-        )
+        if locked.status in (POStatus.RECEIVED, POStatus.CLOSED):
+            message = f"{locked.number} is {locked.get_status_display().lower()} and can't be cancelled."
+        else:
+            message = "Goods have already been received against this order. Close it instead of cancelling."
+        raise DomainError(ErrorCode.INVALID_STATE, message, status_code=409)
     if not reason.strip():
         raise DomainError(ErrorCode.VALIDATION_ERROR, "A cancellation reason is required.")
     out = _transition(
@@ -138,6 +147,32 @@ def cancel_po(po: PurchaseOrder, actor, reason: str) -> PurchaseOrder:
     )
     out.notes = (out.notes + f"\nCancelled: {reason}").strip()
     out.save(update_fields=["notes", "updated_at"])
+    return out
+
+
+@transaction.atomic
+def close_purchase_order(po: PurchaseOrder, actor, reason: str = "") -> PurchaseOrder:
+    """Finish off an order the supplier will not deliver in full: `PARTIALLY_RECEIVED` -> `CLOSED`.
+
+    What was received stays on the shelf and in the ledger; nothing more can be received against a closed order and it
+    drops out of the open-order figures (replenishment `on_order`, the `outstanding` list), while the shortfall still
+    counts against the supplier's fill rate. Idempotent: closing a `CLOSED` order, or a `RECEIVED` one (already complete),
+    returns it unchanged with no new audit row. An order nothing was received against is cancelled, not closed.
+    """
+    locked = PurchaseOrder.objects.select_for_update().get(pk=po.pk)
+    if locked.status in (POStatus.CLOSED, POStatus.RECEIVED):
+        return locked
+    if locked.status in (POStatus.SUBMITTED, POStatus.CONFIRMED):
+        raise DomainError(
+            ErrorCode.INVALID_STATE,
+            f"Nothing has been received against {locked.number} yet. Cancel it instead of closing it.",
+            status_code=409,
+        )
+    out = _transition(locked, (POStatus.PARTIALLY_RECEIVED,), POStatus.CLOSED, actor, "po.closed")
+    reason = reason.strip()
+    if reason:
+        out.notes = (out.notes + f"\nClosed short: {reason}").strip()
+        out.save(update_fields=["notes", "updated_at"])
     return out
 
 
@@ -310,8 +345,14 @@ def supplier_performance(supplier: Supplier, *, since: dt.date | None = None) ->
     agg = lines.aggregate(ordered=Sum("qty_ordered"), received=Sum("qty_received"), rejected=Sum("qty_rejected"))
     ordered, received, rejected = (agg["ordered"] or ZERO), (agg["received"] or ZERO), (agg["rejected"] or ZERO)
     receipts = GoodsReceipt.objects.filter(purchase_order__in=pos).select_related("purchase_order")
+    # `expected_date` is a calendar date in the store's timezone; `created_at` is a UTC instant. Compare store dates, or a
+    # delivery in the evening (west of UTC) or early morning (east of UTC) lands on the wrong side of the due day.
+    tz = store_timezone()
     on_time = sum(
-        1 for r in receipts if r.purchase_order.expected_date and r.created_at.date() <= r.purchase_order.expected_date
+        1
+        for r in receipts
+        if r.purchase_order.expected_date
+        and timezone.localtime(r.created_at, tz).date() <= r.purchase_order.expected_date
     )
     n_receipts = receipts.count()
     return {

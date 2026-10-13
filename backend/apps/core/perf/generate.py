@@ -603,6 +603,7 @@ class OrderPlan:
     payment: dict | None = None
     refund: dict | None = None
     currency: str = "USD"
+    pk: int = 0  # filled in after insertion
 
 
 class ZipfSampler:

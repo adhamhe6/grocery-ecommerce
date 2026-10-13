@@ -45,12 +45,21 @@ class SupplierProduct(models.Model):
 
 
 class POStatus(models.TextChoices):
+    """Purchase-order lifecycle (transitions are enforced in `purchasing/services.py`):
+
+    DRAFT -> SUBMITTED -> CONFIRMED (optional) -> PARTIALLY_RECEIVED -> RECEIVED
+    DRAFT / SUBMITTED / CONFIRMED -> CANCELLED   (only while nothing has been received)
+    PARTIALLY_RECEIVED -> CLOSED                 (the supplier won't deliver the rest; no further receiving)
+    RECEIVED, CANCELLED and CLOSED are final.
+    """
+
     DRAFT = "DRAFT", "Draft"
     SUBMITTED = "SUBMITTED", "Submitted"
     CONFIRMED = "CONFIRMED", "Confirmed by supplier"
     PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED", "Partially received"
     RECEIVED = "RECEIVED", "Received"
     CANCELLED = "CANCELLED", "Cancelled"
+    CLOSED = "CLOSED", "Closed (short)"
 
 
 class PurchaseOrder(TimeStampedModel):
