@@ -31,7 +31,7 @@ export const NAV: NavGroup[] = [
   { title: "Catalogue", items: [
     { href: "/admin/products", label: "Products", icon: Package, any: ["catalog.read"] },
     { href: "/admin/taxonomy", label: "Categories & brands", icon: Tag, any: ["catalog.write", "catalog.merchandise"] },
-    { href: "/admin/reviews", label: "Reviews", icon: ShieldCheck, any: ["catalog.merchandise", "catalog.write"] },
+    { href: "/admin/reviews", label: "Reviews", icon: ShieldCheck, any: ["content.manage"] },
   ] },
   { title: "Inventory", items: [
     { href: "/admin/inventory", label: "Stock", icon: Warehouse, any: ["inventory.read"] },
@@ -47,7 +47,7 @@ export const NAV: NavGroup[] = [
   { title: "Marketing", items: [
     { href: "/admin/promotions", label: "Promotions & coupons", icon: Percent, any: ["promotions.manage"] },
     { href: "/admin/content", label: "Banners & pages", icon: FileText, any: ["content.manage"] },
-    { href: "/admin/newsletter", label: "Newsletter & messages", icon: Gift, any: ["content.manage"] },
+    { href: "/admin/newsletter", label: "Newsletter & messages", icon: Gift, any: ["content.manage", "customers.read"] },
   ] },
   { title: "Finance & reports", items: [
     { href: "/admin/payments", label: "Payments & refunds", icon: CreditCard, any: ["finance.read"] },

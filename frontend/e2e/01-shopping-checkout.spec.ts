@@ -97,6 +97,6 @@ test("guest shops, checks out with the demo card sandbox and sees a confirmed or
   const milkAfter = await stock("whole-milk");
   expect(Number(milkAfter.reserved) - Number(milkBefore.reserved)).toBe(4); // reserved, not yet sold
   expect(Number(milkAfter.on_hand)).toBe(Number(milkBefore.on_hand));
-  const moves = await rows("SELECT kind FROM inventory_stockmovement m JOIN catalog_product p ON p.id = m.product_id WHERE p.slug = 'whole-milk' AND m.ref_type = 'ORDER' AND m.ref_id = $1", [String(order.id)]);
-  expect(moves.length).toBe(0); // no ledger SALE until the goods are actually picked
+  const moves = await rows("SELECT kind FROM inventory_stockmovement WHERE ref_type = 'order' AND ref_id = $1", [number]);
+  expect(moves).toHaveLength(0); // the ledger records a SALE only when goods are actually picked, not when they are reserved
 });

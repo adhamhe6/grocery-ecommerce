@@ -4,8 +4,8 @@ How the system is put together and why. It complements `docs/implementation-plan
 and `docs/data-model.md` (tables, constraints, state machines). `docs/legacy-analysis.md` explains what was
 replaced.
 
-**How to read this document.** Every statement was checked against the source tree at the time of writing, and the
-file that proves it is named. The test suite was **not** run for this document, so nothing here is a claim that a test
+**How to read this document.** It describes the working tree as of 2026-10-12. Statements were checked against the
+source, and the file that proves each one is named. The test suite was **not** run for this document, so nothing here is a claim that a test
 passes; where a behaviour is exercised by a test, the test file is named. Things that are designed but absent, or that
 exist but could not be verified, are collected in [§14 Not implemented / known gaps](#14-not-implemented--known-gaps).
 Paths are relative to the repository root.
@@ -129,13 +129,13 @@ flowchart TB
 | Container (Compose service) | Image / command | Notes |
 |---|---|---|
 | `frontend` | `frontend/Dockerfile`, `node server.js` (Next `output: "standalone"`) | Only service published on all interfaces (`3000`). `BACKEND_INTERNAL_URL` is a **build argument** because Next bakes rewrite destinations into the build. |
-| `backend` | `backend/Dockerfile`, `gunicorn config.wsgi:application --workers 3 --threads 2 --timeout 30 --max-requests 2000 --max-requests-jitter 200` | Published on `127.0.0.1:8000` only. `HEALTHCHECK` calls `/healthz`. Static files via WhiteNoise (collected at image build). `/media` is served by Django only when `SERVE_MEDIA=true` (demo/single-host). |
+| `backend` | `backend/Dockerfile`, `gunicorn config.wsgi:application --workers 3 --threads 2 --timeout 30 --max-requests 2000 --max-requests-jitter 200` | Published on `127.0.0.1:8000` only. `HEALTHCHECK` calls `/healthz`. Static files via WhiteNoise (collected at image build). `/media` is served by Django only when `SERVE_MEDIA=true` (demo/single-host). `/django-admin/` is mounted only when `DJANGO_ADMIN_ENABLED` is true (default follows `DEBUG`, so off in production). |
 | `worker` | `celery -A config worker --concurrency=2` | Healthcheck: `celery inspect ping`. |
 | `beat` | `celery -A config beat --schedule=/tmp/celerybeat-schedule` | Run exactly one instance. There is no leader election; the tasks are written to be idempotent, so a duplicate beat causes redundant work, not corruption. |
 | `migrate` | `manage.py migrate --noinput` | `backend`, `worker` and `beat` wait for it (`service_completed_successfully`). |
 | `postgres` | `postgres:16-alpine` | Volume `pgdata`. |
 | `redis` | `redis:7-alpine`, `appendonly yes`, `maxmemory 256mb`, `maxmemory-policy allkeys-lru` | Volume `redisdata`. One instance holds cache **and** broker (see §14). |
-| `seed` (profile `tools`) | `manage.py seed_demo …` | One-off; see §14 for a flag mismatch. |
+| `seed` (profile `tools`) | `manage.py seed_demo --force` | One-off. `--force` is required because `DEBUG` is off in the production image; the command refuses to run without it. Creates demo data and demo accounts only. |
 
 Settings modules: `config.settings.dev` (default for `manage.py` and Celery), `config.settings.prod` (default for
 WSGI/ASGI, set explicitly in Compose), `config.settings.test` (pytest). Docker and CI facts come from
@@ -146,7 +146,7 @@ WSGI/ASGI, set explicitly in Compose), `config.settings.test` (pytest). Docker a
 ## 4. Module map (Django apps)
 
 The backend is a modular monolith: fourteen apps under `backend/apps/`, all in `INSTALLED_APPS`
-(`backend/config/settings/base.py`). URL composition: `config/urls.py` (health, Django admin, schema) →
+(`backend/config/settings/base.py`). URL composition: `config/urls.py` (health, schema, and Django admin when enabled) →
 `config/api_urls.py` (`/api/v1/`, one include per app) → `config/admin_urls.py` (`/api/v1/admin/`, split into
 `admin_urls_ops.py` and `admin_urls_crud.py` so independent workstreams do not edit the same file).
 
@@ -171,7 +171,7 @@ The backend is a modular monolith: fourteen apps under `backend/apps/`, all in `
 
 The graph below is derived from the imports in the code (not from intent). It shows **module-level imports in the
 domain layer** — models, services, pricing, queries, tasks — with `views.py`, `serializers.py`, `admin_*.py` and
-`urls.py` excluded. An arrow `A --> B` means "A imports B". Every app also imports `core`; those edges are omitted.
+`urls.py` excluded. An arrow `A --> B` means "A imports B". Every app that has code also imports `core`; those edges are omitted.
 Dashed arrows are **function-level (late) imports** that point against the grain.
 
 ```mermaid
@@ -204,7 +204,6 @@ flowchart BT
     inventory -.-> catalog
     promotions -.-> orders
     catalog -.-> orders
-    cart -.-> orders
     core -.-> accounts
 ```
 
@@ -260,7 +259,7 @@ Two smells worth knowing: `cart/services.py` imports `catalog.serializers.Produc
 | `pages/`, `articles/`, `faqs/`, `newsletter/…`, `contact/`, `seo/sitemap/` | `content` |
 | `admin/…` | Staff API, see §7.5 |
 
-Outside `/api/v1/`: `/healthz`, `/readyz`, `/django-admin/`, `/api/schema/`, `/api/docs/` (OpenAPI via
+Outside `/api/v1/`: `/healthz`, `/readyz`, `/django-admin/` (only when `DJANGO_ADMIN_ENABLED`), `/api/schema/`, `/api/docs/` (OpenAPI via
 `drf-spectacular`).
 
 ---
@@ -276,12 +275,13 @@ From `MIDDLEWARE` in `config/settings/base.py`, outermost first:
 | 1 | `django.middleware.security.SecurityMiddleware` | HTTPS redirect, HSTS, nosniff, referrer policy (the secure flags are set in `prod.py`) |
 | 2 | `whitenoise.middleware.WhiteNoiseMiddleware` | Static files (`CompressedStaticFilesStorage`) |
 | 3 | `apps.core.middleware.RequestIDMiddleware` | Accepts an incoming `X-Request-ID` only if it matches `^[A-Za-z0-9._-]{8,64}$`, otherwise generates a UUID hex; stores it in a context variable for logs; echoes it as `X-Request-ID` |
-| 4 | `SessionMiddleware` | Session cookie (`sessionid`) |
-| 5 | `CommonMiddleware` | |
-| 6 | `CsrfViewMiddleware` | DRF views are `csrf_exempt`; CSRF is enforced by the authentication class (§5.2) |
-| 7 | `AuthenticationMiddleware` | `request.user` for non-DRF views (Django admin) |
-| 8 | `MessageMiddleware` | Django admin only |
-| 9 | `XFrameOptionsMiddleware` | `X_FRAME_OPTIONS = "DENY"` in prod |
+| 4 | `apps.core.middleware.StoreTimezoneMiddleware` | Runs the request inside `timezone.override(<store timezone>)` so `timezone.localdate()` means the store's "today" (expiry buffers, slot windows and reports are decided in the store's timezone). Falls back to the process default if the setting is unreadable. Celery workers get the same effect from a `task_prerun` hook in `config/celery.py`. |
+| 5 | `SessionMiddleware` | Session cookie (`sessionid`) |
+| 6 | `CommonMiddleware` | |
+| 7 | `CsrfViewMiddleware` | DRF views are `csrf_exempt`; CSRF is enforced by the authentication class (§5.2) |
+| 8 | `AuthenticationMiddleware` | `request.user` for non-DRF views (Django admin) |
+| 9 | `MessageMiddleware` | Django admin only |
+| 10 | `XFrameOptionsMiddleware` | `X_FRAME_OPTIONS = "DENY"` in prod |
 
 Because the request ID is assigned at step 3, a redirect issued by `SecurityMiddleware` (HTTPS redirect) or a static
 file response does not carry one.
@@ -294,7 +294,10 @@ file response does not carry one.
   extends DRF's `SessionAuthentication` and additionally enforces CSRF when the caller is **anonymous**, so login,
   guest cart and guest checkout are not open to cross-site POSTs. Safe methods are never checked. The token cookie
   `csrftoken` is deliberately not `HttpOnly` (`CSRF_COOKIE_HTTPONLY = False`); the browser client reads it and sends
-  `X-CSRFToken`. `GET /api/v1/auth/csrf/` sets the cookie.
+  `X-CSRFToken`. `GET /api/v1/auth/csrf/` sets the cookie, and so does `GET /api/v1/auth/session/` (always `200`;
+  `{"user": null}` for visitors, so anonymous page loads produce no failing request). Because the storefront proxies `/api`,
+  unsafe requests arrive with `Origin: <storefront>` but a different `Host`; `CSRF_TRUSTED_ORIGINS` therefore defaults to
+  `[FRONTEND_URL]` when not set explicitly (`config/settings/base.py`).
 * **Views that opt out of authentication** (`authentication_classes = []`) never check CSRF: the public catalog
   (`PublicView`), store config, branch/slot lookups, the payment webhook and the demo payment page.
 * **Default permission is `IsAuthenticated`.** Every public endpoint must say `AllowAny` explicitly.
@@ -389,10 +392,13 @@ sequenceDiagram
     A->>P: Payment CAPTURED, order READY_FOR_PICKUP or READY_FOR_DISPATCH
 ```
 
-The provider is called **outside** any database transaction (`payments.services.init_with_provider`,
-`capture_for_order` is called from `fulfilment.finish_packing` inside the packing transaction), and a frontend
-redirect is never treated as proof of payment. With the demo adapter, step 5 is performed by the backend itself:
-`POST /api/v1/payments/demo/<reference>/` signs an event and calls the same `handle_webhook` code path.
+Creating the hosted checkout (`payments.services.init_with_provider`) happens **after** the order transaction commits
+and outside any transaction, so a slow or failing provider cannot roll back or hold locks on an order that already
+exists; if it fails the order stays `PENDING_PAYMENT` and the customer can retry from the order page
+(`payment_init_failed: true`). Capture and void are different: they are called from inside the service transaction
+(`fulfilment.finish_packing`, `workflow.cancel_order`) so that a provider failure aborts the status change. A frontend
+redirect is never treated as proof of payment. With the demo adapter, the "customer pays" step is performed by the
+backend itself: `POST /api/v1/payments/demo/<reference>/` signs an event and calls the same `handle_webhook` code path.
 
 ---
 
@@ -403,8 +409,8 @@ redirect is never treated as proof of payment. With the demo adapter, step 5 is 
 * Everything is under `/api/v1/`. A breaking change is meant to ship as `/api/v2/`; no v2 exists.
 * OpenAPI 3 schema: `GET /api/schema/`; Swagger UI: `GET /api/docs/`.
 * Money and quantities are **decimal strings** in JSON (`"4.50"`, `"0.250"` or the canonical trimmed form `"0.25"` via
-  `apps/core/money.py: qty_str`). Clients send quantities as strings as well (`apps/cart` tests and
-  `frontend/src/lib/hooks.tsx` do). Floats are rejected by `money.to_decimal`.
+  `apps/core/money.py: qty_str`). The storefront sends quantities as strings too (`String(quantity)` in
+  `frontend/src/lib/hooks.tsx`). Floats are rejected by `money.to_decimal`.
 * Dates and instants are ISO 8601; instants are UTC. Store-local wall times (slots) are rendered in the store timezone
   by the frontend (`formatSlotDay`, `formatSlotWindow` in `frontend/src/lib/format.ts`).
 
@@ -549,7 +555,7 @@ guard rails (§7.4). `finance.refund` is defined and granted but **no endpoint c
   staff, settings and audit are **not** branch data and are gated by capability only.
 * `GET /api/v1/admin/me/permissions/` returns role, capability list and branch scope; the dashboard uses it only to
   hide what the server would refuse anyway.
-* `tests/security/test_route_sweep.py` (new, uncommitted at the time of writing) asserts that every route enumerated
+* `tests/security/test_route_sweep.py` asserts that every route enumerated
   under `/api/v1/admin/` refuses anonymous callers and customers for every method.
 
 ### 7.4 How `AdminViewSet` enforces and audits
@@ -560,19 +566,26 @@ guard rails (§7.4). `finance.refund` is defined and granted but **no endpoint c
    from `capability_map[action]`, else `read_capability` for safe methods, else `capability`. No capability resolved
    means **deny**.
 2. `get_queryset()` is scoped with `branch_field` when set.
-3. `perform_create/update/destroy` write an `AuditLog` row (`<label>.created|updated|deleted`) with a JSON `before`/`after`
+3. `perform_create/update/destroy` write the change and an `AuditLog` row (`<label>.created|updated|deleted`) inside one
+   `transaction.atomic()`, so there is never a change without a record of it. The row carries a JSON `before`/`after`
    snapshot (`snapshot()` skips `password`, `token`, `secret`, `tracking_token`), the actor, IP and request ID.
-4. `AuditedViewSet` (`apps/core/admin_utils.py`) wraps write **and** audit in one `transaction.atomic()`, includes
-   many-to-many ids in snapshots, and maps `IntegrityError` to a `409 INVALID_STATE`. It is used by products,
-   categories, brands, collections, promotions, coupons, banners, pages, articles, FAQs, customers and staff.
-   The plain `AdminViewSet` — used by branches, closures, zones, slot templates, slots and suppliers — does **not**
-   wrap the write and its audit row in one transaction (`ATOMIC_REQUESTS` is off) and does not translate
-   `IntegrityError`.
-5. Read-only sets (`AdminReadOnlyViewSet`: audit log, newsletter, contact messages, units, allergens, review
-   moderation, support cases) still pass through the same permission classes. `AuditLogViewSet` allows only
-   `GET/HEAD/OPTIONS`.
-6. Action endpoints in other modules (stock adjust/waste/transfer, order actions, PO actions, refunds, settings) call
-   `audit.record(...)` themselves.
+4. `AuditedViewSet` (`apps/core/admin_utils.py`) adds many-to-many ids to the snapshots and maps `IntegrityError` to a
+   `409 INVALID_STATE`. It is used by products, categories, brands, collections, promotions, coupons, banners, pages,
+   articles, FAQs, customers and staff. The plain `AdminViewSet` — used by branches, closures, zones, slot templates,
+   slots and suppliers — does not translate `IntegrityError`, so a unique-key race there is a `500`.
+5. `AdminReadOnlyViewSet` (no model create/update/delete through the router; used by the audit log, newsletter,
+   contact messages, units, allergens, review moderation and support cases) passes through the same permission classes.
+   Review moderation and support cases add explicit `POST` actions; `AuditLogViewSet` allows only `GET/HEAD/OPTIONS`.
+6. Action endpoints in other modules call `audit.record(...)` themselves: stock adjust/waste/transfer/thresholds, batch
+   status, PO actions, supplier products, slot generation, settings and logo, report export, support-case decisions,
+   `refund.api`, plus the payment services (`payment.captured`, `payment.released`, `payment.cod_collected`,
+   `refund.requested`, `refund.manual_completed`, `payment.late_authorization_voided`) and `order.cancelled` /
+   `order.weight_override`.
+
+   **Order fulfilment steps are not in `AuditLog`.** Start picking, picking an item, marking unavailable, proposing or
+   deciding a substitution, finishing picking or packing, dispatch and completion are recorded in `OrderStatusHistory`
+   (with actor and notes) and, for stock, in the `StockMovement` ledger. `docs/implementation-plan.md` §9 says every
+   consequential action writes an `AuditLog` row; for these steps the timeline and the ledger are the record.
 
 **Staff-management guard rails** (`apps/accounts/admin_api.py: StaffViewSet.enforce_rules`): only a `SUPER_ADMIN` may
 create or change `ADMIN`/`SUPER_ADMIN` accounts; nobody changes their own role or deactivates themselves; the last
@@ -589,7 +602,7 @@ a new account starts with an unusable password and an invite email.
 | `promotions`, `coupons` | `promotions.manage` | `promotions.manage` |
 | `banners`, `pages`, `articles`, `faqs` | `content.manage` | `content.manage` |
 | `newsletter` | `content.manage` or `reports.export` | read-only (plus CSV export) |
-| `contact-messages` | `customers.read` | read-only |
+| `contact-messages` | `customers.read` | `customers.read` (marking a message handled is a `POST …/handle/` guarded by the same capability) |
 | `customers` | `customers.read` | `customers.manage` |
 | `staff` | `staff.manage` | `staff.manage` |
 | `branches`, `zones` | `catalog.read` | `branches.manage` |
@@ -619,7 +632,7 @@ Celery application: `config/celery.py` (`autodiscover_tasks`), settings under th
 | `CELERY_TASK_ALWAYS_EAGER` | env `CELERY_ALWAYS_EAGER`; **dev default true**, test true, base/prod false | In dev and tests, tasks run inline |
 | `CELERY_TASK_EAGER_PROPAGATES` | false (true in tests) | |
 | `acks_late`, `reject_on_worker_lost` | true | A task is re-delivered if the worker dies; tasks are therefore written to be idempotent |
-| Time zone | UTC | Beat schedules are plain intervals |
+| Time zone | UTC | Beat schedules are plain intervals. A `task_prerun` hook (`config/celery.py`) activates the store timezone for each task |
 
 ### 8.1 Beat schedule
 
@@ -630,8 +643,8 @@ From `CELERY_BEAT_SCHEDULE`:
 | `release-expired-reservations` | `apps.orders.tasks.release_expired_reservations` | 60 s | For each `PENDING_PAYMENT` order with `reservation_expires_at` in the past, `workflow.expire_unpaid()` runs in its own transaction: re-locks and re-checks, releases stock allocations, returns any committed items, releases the slot, voids the coupon redemption, voids open payments, and moves the order to `PAYMENT_FAILED`. A late payment arriving afterwards is voided (`payments.services.apply_event`). |
 | `generate-delivery-slots` | `apps.stores.tasks.generate_delivery_slots` | 6 h | For each active branch, `generate_slots(branch, days_ahead=7)` creates missing `DeliverySlot` rows from active templates, skipping closures and times outside opening hours. Idempotent (`get_or_create` on the unique slot key). |
 | `expiry-and-low-stock-scan` | `apps.inventory.tasks.expiry_and_low_stock_scan` | 1 h | Marks `ACTIVE` batches with `expiry_date < today` as `EXPIRED` (stock stays on hand until staff write it off as waste). Counts stock levels at or below their threshold and **logs** the number; no alert is sent. |
-| `refresh-popularity` | `apps.catalog.tasks.refresh_popularity` | 3 h | Recomputes `Product.popularity` as units ordered in the last 30 days on non-substitute lines of orders that are not `CANCELLED`, `PAYMENT_FAILED` or `PENDING_PAYMENT`. |
-| `requeue-stalled-emails` | `apps.notifications.tasks.requeue_stalled_emails` | 10 min | Outbox sweep: re-enqueues notifications recorded as `EMAIL_QUEUED` for over 10 minutes and retries `EMAIL_FAILED` ones for up to 24 hours. At-least-once delivery; the send task skips anything already sent. *(Added to the working tree while this document was written; not yet committed.)* |
+| `refresh-popularity` | `apps.catalog.tasks.refresh_popularity` | 3 h | Recomputes `Product.popularity` as units ordered in the last 30 days on non-substitute lines of orders that are not `CANCELLED`, `PAYMENT_FAILED` or `PENDING_PAYMENT`. If the window contains no such sales at all it leaves the existing ranking untouched (logs `popularity_unchanged_no_recent_sales`). |
+| `requeue-stalled-emails` | `apps.notifications.tasks.requeue_stalled_emails` | 10 min | Outbox sweep: re-enqueues notifications recorded as `EMAIL_QUEUED` for over 10 minutes and retries `EMAIL_FAILED` ones for up to 24 hours. At-least-once delivery; the send task skips anything already sent. |
 | `cleanup-idempotency-keys` | `apps.core.tasks.cleanup_idempotency_keys` | 24 h | Deletes `IdempotencyRecord` rows older than 7 days. |
 
 ### 8.2 On-demand tasks
@@ -644,12 +657,13 @@ From `CELERY_BEAT_SCHEDULE`:
 
 ### 8.3 Enqueue safety
 
-`apps/core/async_utils.py` (new, uncommitted at the time of writing) provides `safe_delay()` (never raises when the
+`apps/core/async_utils.py` provides `safe_delay()` (never raises when the
 broker is unreachable) and `enqueue_after_commit()`. `notify_order()` records the notification with channel
 `EMAIL_QUEUED` **before** touching the broker and enqueues after the surrounding transaction commits, so a broker outage
-cannot turn a committed order into an HTTP 500, and the sweep above finds anything lost. Newsletter confirmation and
+cannot turn a committed order into an HTTP 500, and the sweep above finds anything lost. The password-reset request uses
+`safe_delay` too (so the response is identical whether or not the account exists), and newsletter confirmation and
 staff invites catch enqueue failures themselves. The behaviour is exercised by
-`backend/tests/resilience/test_degraded_dependencies.py` (also uncommitted).
+`backend/tests/resilience/test_degraded_dependencies.py`.
 
 ---
 
@@ -672,8 +686,8 @@ Prices at checkout, stock decisions, carts, orders and payments are read from th
 | `catalog` | active brands | 600 s | same |
 | `catalog` | default branch id | 300 s | same signal set (not on `Branch` save: up to 5 minutes stale) |
 | `catalog` | search suggestions per (branch, query) | 30 s | TTL and the same signals |
-| `home` | home page payload per branch | 60 s | catalog changes, promotion changes, `Review` changes |
-| `promos` | active promotion definitions | 30 s | `Promotion` save/delete and its M2M changes. Checkout and cart mutations call `load_index(use_cache=False)` |
+| `home` | home page payload per branch | 60 s | catalog changes, promotion changes, `Review` changes, and staff edits of banners and articles through the staff API (`content.admin_api.HomeCacheMixin`) |
+| `promos` | active promotion definitions | 30 s | `Promotion` save/delete and its M2M changes. Catalog browsing, home, content and comparison use this cached index; cart pricing, checkout and substitution pricing call `load_index(use_cache=False)` |
 | `dashboard` | dashboard KPIs per (period, branches) | 120 s | TTL only |
 | `reports` | report tables per (name, period, branches) | 120 s | TTL only |
 
@@ -699,9 +713,9 @@ the `readyz` probe key, and sessions (`cached_db`).
 | Celery broker (same Redis in Compose) | Enqueue fails; handled by `safe_delay`/`enqueue_after_commit` and the outbox sweep (§8.3). Workers cannot consume while Redis is down. |
 | Without `REDIS_URL` | `LocMemCache`: each gunicorn worker has its own cache, so a `bump` in one worker does not reach another; TTLs bound the staleness. Throttle counters are also per process. Broker falls back to `memory://`, which is only meaningful in eager mode. |
 
-`backend/tests/resilience/test_degraded_dependencies.py` (uncommitted) exercises browsing, readiness, cart, card
-checkout and sign-in against an unreachable Redis URL, and order placement with a failing broker. At the time of
-writing no earlier test covered this.
+`backend/tests/resilience/test_degraded_dependencies.py` exercises browsing, readiness, cart, card checkout and
+sign-in against an unreachable Redis URL, and order placement, idempotent replay, the email outbox and password reset
+with a failing broker.
 
 ---
 
@@ -717,7 +731,7 @@ react-hook-form + zod. Tests: Vitest + Testing Library under `frontend/tests/`.
 | root | `layout.tsx` — `dynamic = "force-dynamic"`, loads store config, injects brand colours as CSS variables, wraps everything in `Providers`; `error.tsx`, `not-found.tsx`, `robots.ts`, `sitemap.ts` | — |
 | `(site)` | Header, department navigation, branch picker, demo bar, footer, cart drawer | home, `shop`, `product/[slug]`, `collections/[slug]`, `new`, `offers`, `cart`, `compare`, `login`, `register`, `forgot-password`, `reset-password`, `account/*` (portal: overview, orders, addresses, favourites, lists), `orders/[number]`, `track`, `stores`, `guides` and `guides/[slug]`, `faq`, `contact`, `p/[slug]` (CMS pages), newsletter confirm/unsubscribe |
 | `(checkout)` | Distraction-free header only | `checkout`, `pay/demo/[reference]` |
-| `(admin)` | `AdminShell` (client-side auth and capability gate, capability-filtered sidebar, store switcher) | **`/admin` (dashboard) only** — see §14 |
+| `(admin)` | `AdminShell` (client-side auth and capability gate, capability-filtered sidebar, store switcher) | `/admin` dashboard plus a page for each of the 22 sidebar sections: orders, picking, support cases, customers, products, categories and brands, reviews, stock, batches and expiry, suppliers, purchase orders, replenishment, stores and zones, delivery slots, promotions and coupons, banners and pages, newsletter and messages, payments and refunds, reports, staff, store settings, audit log |
 
 ### 10.2 Server and client components
 
@@ -748,7 +762,7 @@ react-hook-form + zod. Tests: Vitest + Testing Library under `frontend/tests/`.
 ### 10.4 TanStack Query
 
 `makeQueryClient()` (`src/lib/hooks.tsx`): `staleTime` 20 s, `refetchOnWindowFocus`, retry up to twice but never on 4xx.
-Query keys: `["me"]` (`/account/me/`; 401/403 becomes `null`), `["cart"]`, `["favorites"]`, `["orders"]`,
+Query keys: `["me"]` (`GET /auth/session/`, which answers `{"user": null}` for visitors), `["cart"]`, `["favorites"]`, `["orders"]`,
 `["admin","perms"]`. Mutations write the server's response straight into the cache (`setQueryData(["cart"], cart)`);
 favourites use optimistic updates with rollback; sign-in invalidates cart, favourites and orders; sign-out clears the
 cache. Comparison list is `localStorage` (`orchardrow.compare`, max 4) mirrored to the account with `PUT
@@ -756,19 +770,21 @@ cache. Comparison list is `localStorage` (`orchardrow.compare`, max 4) mirrored 
 
 ### 10.5 Why `/api` and `/media` are proxied same-origin
 
-`next.config.ts` rewrites `/api/:path*` and `/media/:path*` to Django. Reasons, all visible in the code:
+`next.config.ts` rewrites `/api/:path*/`, `/api/:path*` and `/media/:path*` to Django. The trailing-slash variant comes first and
+`skipTrailingSlashRedirect` is on, because every Django API route ends in a slash and Next's default 308 redirect would
+otherwise bounce `/api/v1/cart/` ⇄ `/api/v1/cart` forever. Reasons for the proxy, all visible in the code:
 
 1. **First-party cookies**: the session cookie stays `HttpOnly` + `SameSite=Lax` and the CSRF double-submit works without
    cross-site cookie relaxations.
 2. **No CORS surface**: the backend has no CORS middleware or allow-list to get wrong; the CSP says `connect-src 'self'`.
-3. **The backend need not be public**: Compose publishes it on `127.0.0.1` only; Django admin (`/django-admin/`) and
-   `/healthz` are not reachable through the storefront.
+3. **The backend need not be public**: Compose publishes it on `127.0.0.1` only; Django admin (`/django-admin/`, off
+   by default in production) and `/healthz` are not reachable through the storefront.
 4. Production Django trusts the forwarded host and scheme (`USE_X_FORWARDED_HOST`, `SECURE_PROXY_SSL_HEADER`) because
    the public host arrives via the proxy.
 
 Security headers are set in `next.config.ts`: CSP (`default-src 'self'`; `script-src 'self' 'unsafe-inline'`, plus
 `'unsafe-eval'` in development), `X-Frame-Options: DENY`, `nosniff`, referrer policy, permissions policy.
-`/media/*` responses are `Cache-Control: public, max-age=31536000, immutable` (upload paths contain random names).
+`/media/*` responses are `Cache-Control: public, max-age=31536000, immutable`.
 
 ### 10.6 Design tokens
 
@@ -809,8 +825,9 @@ gate (`components/admin/shell.tsx`) is a convenience: the API enforces the same 
 ## 12. Configuration reference
 
 All backend variables are read in `backend/config/settings/*.py` through `env()`, `env_bool()` (`1/true/yes/on`),
-`env_int()` and `env_list()` (comma-separated). `backend/.env` files are not loaded by the code; Compose passes the
-variables listed in `docker-compose.yml`, and `make env` creates `.env` from `.env.example` with generated secrets.
+`env_int()` and `env_list()` (comma-separated). The settings code loads no `.env` file (there is no dotenv dependency);
+Compose passes the variables listed in `docker-compose.yml`, and `make env` creates `.env` from `.env.example` with
+generated secrets.
 
 ### 12.1 Backend
 
@@ -820,10 +837,11 @@ variables listed in `docker-compose.yml`, and `make env` creates `.env` from `.e
 | `DJANGO_SECRET_KEY` | `""` (dev falls back to a labelled insecure key) | Signing key. Production refuses to start unless it is ≥ 40 characters and does not start with `dev-only` |
 | `DJANGO_DEBUG` | `false` (dev: `true`) | Debug mode; also gates serving `/media` through Django and `seed_demo` |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` (dev: `*`) | Production refuses an empty list or `*` |
-| `CSRF_TRUSTED_ORIGINS` | empty | Origins allowed for unsafe cross-origin-looking requests; set to the storefront origin(s) |
+| `CSRF_TRUSTED_ORIGINS` | empty, which then becomes `[FRONTEND_URL]` | Origins allowed for unsafe requests whose `Origin` differs from `Host` (the storefront proxy case) |
+| `DJANGO_ADMIN_ENABLED` | follows `DJANGO_DEBUG` (dev: `true`) | Mounts `/django-admin/`; a break-glass tool, off in production unless turned on deliberately |
 | `DATABASE_URL` | `postgres://grocery:grocery@127.0.0.1:5432/grocery` | PostgreSQL only (`database_from_url` hard-codes the engine) |
 | `DB_CONN_MAX_AGE` | `60` | Persistent connections (health-checked) |
-| `TIME_ZONE` | `UTC` | Django's `TIME_ZONE`. The *store's* timezone is `StoreSettings.timezone` |
+| `TIME_ZONE` | `UTC` (Compose and `.env.example`: `America/New_York`) | Django's process-default `TIME_ZONE`. The store's timezone is `StoreSettings.timezone`, which `StoreTimezoneMiddleware` activates per request and a Celery hook per task; keep `TIME_ZONE` equal to it for code that runs outside both (management commands) |
 | `MEDIA_ROOT` | `<backend>/media` | Upload directory (`/data/media` in Compose) |
 | `SERVE_MEDIA` | `false` | Serve `/media/` from Django when `DEBUG` is off — single-host/demo only |
 | `IMAGE_UPLOAD_MAX_BYTES` | `5242880` | Per-upload limit in the image pipeline |
@@ -840,7 +858,7 @@ variables listed in `docker-compose.yml`, and `make env` creates `.env` from `.e
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | empty | SMTP credentials |
 | `EMAIL_USE_TLS` | `false` | |
 | `DEFAULT_FROM_EMAIL` | `Orchard Row <hello@example.invalid>` | |
-| `FRONTEND_URL` | `http://localhost:3000` | Public storefront URL used in emails, demo payment page and Stripe return URLs |
+| `FRONTEND_URL` | `http://localhost:3000` (trailing slash stripped) | Public storefront URL used in emails, the demo payment page and Stripe return URLs; also the default CSRF trusted origin |
 | `STORE_CURRENCY` | `USD` | **Declared but not read anywhere**; the currency comes from `StoreSettings.currency` |
 | `RESERVATION_TTL_MINUTES` | `15` | Payment window for card orders before stock is released |
 | `PAYMENT_PROVIDER` | `demo` | `demo`, `stripe`; production forces `unconfigured` when `demo` is requested without opt-in |
@@ -866,7 +884,7 @@ variables listed in `docker-compose.yml`, and `make env` creates `.env` from `.e
 | `NEXT_DIST_DIR` | `.next` | `next.config.ts` | Separate build output for parallel builds |
 | `NODE_ENV` | set by Next | `next.config.ts` | Adds `'unsafe-eval'` to the CSP in development |
 | `PORT`, `HOSTNAME`, `NEXT_TELEMETRY_DISABLED` | set in `frontend/Dockerfile` | Next | Server binding and telemetry |
-| `E2E_BASE_URL` | — | `.github/workflows/ci.yml` only | Set for the Playwright job; no spec or config consumes it yet |
+| `E2E_BASE_URL`, `E2E_DATABASE_URL`, `E2E_CHROMIUM_PATH`, `E2E_DEMO_PASSWORD` | `http://localhost:3000`, `postgres://grocery:grocery@127.0.0.1:5432/grocery_e2e`, —, the documented demo password | `frontend/playwright.config.ts`, `frontend/e2e/support/*` | Storefront origin, the PostgreSQL URL the specs read to verify persisted state, an optional Chromium binary, and the shared demo password |
 
 ### 12.3 Compose / `.env` only
 
@@ -900,11 +918,11 @@ See §10.5. **Cost**: all API traffic passes through the Next.js server; rewrite
 * **Chosen**: `Product.search_vector` (weighted `tsvector`: name A, derived `search_text` B, short description C, description D, `english` config) with a GIN index, prefix matching, plus `pg_trgm` similarity on `UPPER(name)` with a GIN trigram index, SKU and barcode exact matches; rank is `ts_rank + 0.6 × similarity` (`apps/catalog/search.py`).
 * **Alternatives**: Elasticsearch/OpenSearch.
 * **Why**: one datastore, transactional with the catalog, no sync pipeline.
-* **Cost**: the vector is rebuilt by signal handlers (`catalog/signals.py`), not by the database, so `bulk_create` or `QuerySet.update` on products leaves it stale until `search.rebuild_index()` runs. `unaccent` is installed by migration but no query uses it, so searches are not accent-insensitive. Query plans were not measured (`docs/performance.md` does not exist).
+* **Cost**: the vector is rebuilt by signal handlers (`catalog/signals.py`), not by the database, so `bulk_create` or `QuerySet.update` on products leaves it stale until `search.rebuild_index()` runs. `unaccent` is installed by migration but no query uses it, so no accent folding is applied to search. Query plans were not measured for this document (`docs/performance.md` was not present when it was written).
 
 ### 13.5 Reserve → commit → release inventory
 * **Chosen**: reserve at order placement (`StockLevel.reserved`, FEFO `Allocation` rows for batch-tracked products), commit when the picker records the quantity (`on_hand` falls, `SALE` movement written, unused reservation released), release on cancel, expiry or short pick (`apps/inventory/services.py`).
-* **Alternatives**: decrement stock at order placement (cannot account for substitutions, short picks and weighed items), or only at picking (allows overselling between order and pick).
+* **Alternatives**: decrement stock at order placement (would need correcting afterwards for substitutions, short picks and weighed items), or only at picking (allows overselling between order and pick).
 * **How it is made safe**: locks are taken in a fixed order (stock levels by product id, batches by id), and `CHECK reserved <= on_hand` is the last line of defence. A reservation that sits on a batch that became unsellable is re-allocated at pick time.
 * **Cost**: more states to reason about (`Allocation`: RESERVED/COMMITTED/RELEASED) and a reconciliation function, `check_invariants()`, that compares levels, batches, allocations and the ledger.
 
@@ -938,13 +956,9 @@ A notification row is written inside the business transaction (channel `EMAIL_QU
 
 ### Not implemented
 * **`apps/loyalty`** is a registered but empty app (`docs/implementation-plan.md` §4 calls it a stretch item).
-* **Staff dashboard pages.** `frontend/src/app/(admin)/admin/` contains only the layout and the dashboard home page.
-  `components/admin/shell.tsx` links to some 22 further routes (`/admin/orders`, `/admin/picking`, `/admin/products`,
-  `/admin/inventory`, `/admin/purchase-orders`, `/admin/settings`, `/admin/audit`, …) that have no page yet. The
-  backend API for all of them exists. *(The dashboard was being built in parallel while this was written — re-check
-  before relying on this statement.)*
-* **Playwright end-to-end suite.** `frontend/e2e/` is empty and there is no `playwright.config.*`, but `make e2e` and the
-  CI `e2e` job run `npx playwright test`.
+* **Most of the Playwright end-to-end suite.** `frontend/playwright.config.ts` and two specs exist
+  (`01-shopping-checkout`, `06-payment-failure-recovery`); the CI job and `make e2e` are named for six core workflows, and
+  the other four have no spec yet.
 * **Report export as a background task.** The plan lists `export_report_csv`; CSV export is synchronous
   (`?export=csv` in `apps/reports/views.py`).
 * **Low-stock / expiry alerts.** The hourly scan flags expired batches and logs a count; nothing is sent to anyone.
@@ -954,15 +968,16 @@ A notification row is written inside the business transaction (channel `EMAIL_QU
 * **Nonce-based CSP.** `script-src` allows `'unsafe-inline'` (noted in `next.config.ts`).
 * **`next/image`, `revalidateTag`.** The plan mentions `next/image`; images are plain `<img>` with `srcset`. Cache tags
   are declared but never invalidated.
-* **Documents referenced from code or the plan that do not exist yet**: `docs/performance.md`, `docs/deployment.md`,
-  `docs/security.md`, `docs/commerce-workflows.md`, `docs/inventory-and-fulfilment.md`, `docs/reports.md`.
+* **Documents referenced from code or the plan that were not present in `docs/` when this one was written**:
+  `docs/performance.md`, `docs/commerce-workflows.md`, `docs/inventory-and-fulfilment.md`, `docs/reports.md`
+  (module docstrings in `apps/orders/fulfilment.py`, `apps/inventory/services.py`, `apps/promotions/engine.py` and
+  `apps/reports/queries.py` point at the last four; the plan points at `docs/performance.md`). `docs/security.md`,
+  `docs/deployment.md` and `docs/seed-data.md` appeared while this document was being written and were not reviewed
+  against it line by line.
 * **Unused definitions**: error codes `BRANCH_CLOSED`, `INVALID_WEBHOOK`, `BATCH_BLOCKED`; capability
   `finance.refund`; settings `STORE_CURRENCY` and `BACKEND_PUBLIC_URL`; the `unaccent` extension.
 
 ### Defects and risks found while reading (not fixed here)
-* **Seed command flag mismatch.** `docker-compose.yml` (`seed` service) and `.github/workflows/ci.yml` call
-  `seed_demo --yes-i-know-this-is-demo-data`, but `apps/core/management/commands/seed_demo.py` defines `--force`
-  (required when `DEBUG` is off) and no such flag. argparse would reject the unknown option.
 * **Client IP is client-influenceable.** Neither `REST_FRAMEWORK["NUM_PROXIES"]` nor a trusted-proxy rule is set;
   DRF's throttle identity uses the whole `X-Forwarded-For` header when `NUM_PROXIES` is unset, and
   `accounts/views.py: _client_ip` and `core/audit.py: _client_ip` take its first hop. A caller who sets that header can
@@ -973,18 +988,25 @@ A notification row is written inside the business transaction (channel `EMAIL_QU
   not run.
 * **Cache and broker share one Redis with `allkeys-lru`.** Under memory pressure Redis may evict Celery queue keys along
   with cache keys. Derived from `docker-compose.yml`; not observed.
-* **`AdminViewSet` write + audit are not atomic** for branches, closures, zones, slot templates, slots and suppliers
-  (§7.4), and a unique-key race there is an unhandled `IntegrityError` (500).
+* **Plain `AdminViewSet` does not translate unique-key races.** Branches, closures, zones, slot templates, slots and
+  suppliers answer a concurrent duplicate with an unhandled `IntegrityError` (500) rather than the `409` that
+  `AuditedViewSet` returns (§7.4).
 * **Order key collisions.** `Order.checkout_key` has a **global** partial unique index while the idempotency record is
   scoped per actor; two different actors reusing the same key would pass the record check and hit the order index as an
   `IntegrityError` that `checkout._create_order` re-raises (500). Clients generate UUIDs, so this is theoretical.
 * **Public API schema.** `/api/schema/` and `/api/docs/` are unauthenticated in every environment and, because `/api/*`
   is proxied, reachable through the storefront origin.
+* **Media file names can be reused while `/media` is cached as immutable.** Category, banner, article and logo uploads
+  use fixed base names (`upload.webp`, `logo.webp`); the storage picks the first free name and the replaced file is
+  deleted only after the new one is saved, so a later replacement can receive a name used before, while
+  `next.config.ts` serves `/media/*` with `max-age=31536000, immutable`. Product images use random names and are
+  unaffected. Derived from `apps/core/admin_utils.py` and `apps/core/admin_views.py`; not tested.
 
 ### Could not be verified
 * Stripe adapter against a live account (stated in its own docstring).
-* End-to-end header forwarding through the Next.js rewrite (`X-Forwarded-Host/Proto/For`, raw webhook bodies) in a
-  production-like deployment — requires running the stack, which was out of scope.
+* Header forwarding through the Next.js rewrite in a production-like deployment (`X-Forwarded-Host/Proto/For`, HTTPS,
+  raw webhook bodies). The Playwright specs in `frontend/e2e/` do go through the proxy against a running stack, but
+  running a stack was out of scope here, so none of it was exercised.
 * The Docker images and Compose stack were not built or run; Compose facts come from reading the files.
 * Performance targets (LCP, INP, CLS, query plans): no measurements exist in the repository.
 * Mermaid diagrams were validated with the Mermaid parser; they were not rendered visually.
