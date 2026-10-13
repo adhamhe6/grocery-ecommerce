@@ -1,0 +1,33 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ", "S", "C4", "SIM"]
+ignore = [
+  "E501",   # line length handled by formatter
+  "B008",
+  "S101",   # asserts are used in tests
+  "S105", "S106",  # test passwords
+  "DJ001",  # nullable CharFields are used deliberately for optional unique values (barcode)
+  "UP040", "UP042", "UP038", "SIM108", "S311", "C408", "DJ008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "B"]
+"tests/**" = ["S", "B"]
+"apps/*/management/**" = ["S"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers --reuse-db -p no:cacheprovider"
+filterwarnings = ["ignore:No directory at:UserWarning"]
+testpaths = ["tests"]
+markers = [
+  "concurrency: multi-threaded tests that require real transactions",
+]
